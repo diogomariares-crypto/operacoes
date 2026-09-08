@@ -72,7 +72,18 @@ export interface Turno {
   hora_inicio: string
   hora_fim: string
   almoco_min: number
+  /** Quem paga o turno. */
+  hotel_id: string
+  /**
+   * Onde as horas foram feitas. Quase sempre é o mesmo hotel que paga, mas nem
+   * sempre — e são perguntas diferentes: o custo é de quem paga, as horas
+   * disponíveis são de onde se trabalhou.
+   */
+  hotel_trabalhado: string
 }
+
+/** Um turno por gravar: os hotéis vêm de quem o lança, não do formulário. */
+export type TurnoNovo = Omit<Turno, 'id' | 'hotel_id' | 'hotel_trabalhado'>
 
 /* ------------------------------------------------------------------ cálculo */
 
@@ -224,9 +235,21 @@ export async function fetchLimpezas(hotelId: string, de: string, ate: string): P
   return (data ?? []).map(r => ({ ...r, minutos: num(r.minutos) })) as Limpeza[]
 }
 
-export async function fetchOutsourcing(hotelId: string, de: string, ate: string): Promise<Turno[]> {
+/**
+ * Os turnos de gente de fora de um hotel — mas «de um hotel» quer dizer duas
+ * coisas, e quem chama tem de escolher:
+ *
+ *   'trabalhado' — as horas feitas neste hotel, venham de onde vierem. É o que
+ *                  conta para a produção do dia.
+ *   'pago'       — os turnos que este hotel paga, tenham sido feitos onde
+ *                  tiverem. É o que conta para os custos.
+ */
+export async function fetchOutsourcing(
+  hotelId: string, de: string, ate: string, por: 'trabalhado' | 'pago' = 'trabalhado',
+): Promise<Turno[]> {
   const { data, error } = await supabase
-    .from('hk_outsourcing').select('*').eq('hotel_id', hotelId)
+    .from('hk_outsourcing').select('*')
+    .eq(por === 'pago' ? 'hotel_id' : 'hotel_trabalhado', hotelId)
     .gte('dia', de).lte('dia', ate).order('dia')
   if (error) throw error
   return (data ?? []).map(r => ({
@@ -323,8 +346,10 @@ export async function apagarLimpeza(id: string) {
   if (error) throw error
 }
 
-export async function juntarTurno(hotelId: string, t: Omit<Turno, 'id'>) {
-  const { error } = await supabase.from('hk_outsourcing').insert({ ...t, hotel_id: hotelId })
+export async function juntarTurno(hotelId: string, t: TurnoNovo, trabalhadoEm?: string) {
+  const { error } = await supabase.from('hk_outsourcing').insert({
+    ...t, hotel_id: hotelId, hotel_trabalhado: trabalhadoEm ?? hotelId,
+  })
   if (error) throw error
 }
 

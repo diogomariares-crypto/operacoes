@@ -2,15 +2,15 @@ import { useEffect, useMemo, useState } from 'react'
 import { useApp } from '../lib/appState'
 import { useAuth } from '../lib/auth'
 import {
-  apagarTurno, custoDoTurno, fetchOutsourcing, fetchParametros, horas, juntarTurno,
-  minutosDoTurno, type Parametros, type Turno,
+  apagarTurno, custoDoTurno, fetchOutsourcing, fetchParametros, guardarTurno, horas,
+  juntarTurno, minutosDoTurno, type Parametros, type Turno, type TurnoNovo,
 } from '../lib/housekeeping'
 import { MESES, diaSemanaCurto, dmy, lastDayOfMonth, money, todayISO } from '../lib/format'
-import { Loading, NumInput, StatCard, useToast } from '../components/ui'
+import { Loading, Modal, NumInput, StatCard, useToast } from '../components/ui'
 import { ehMes, mesCorrente, useLembrado } from '../lib/lembrar'
 
 export default function HkOutsourcing() {
-  const { hotelId } = useApp()
+  const { hotelId, hotels } = useApp()
   const { canWrite } = useAuth()
   const toast = useToast()
   const podeEscrever = canWrite('HSK')
@@ -20,13 +20,15 @@ export default function HkOutsourcing() {
   const [turnos, setTurnos] = useState<Turno[]>([])
   const [param, setParam] = useState<Parametros | null>(null)
   const [loading, setLoading] = useState(true)
+  const [aEditar, setAEditar] = useState<Turno | null>(null)
 
   const carregar = () => {
     if (!hotelId) return
     setLoading(true)
     const de = ano ? `${mes.slice(0, 4)}-01-01` : `${mes}-01`
     const ate = ano ? `${mes.slice(0, 4)}-12-31` : lastDayOfMonth(mes)
-    Promise.all([fetchParametros(hotelId), fetchOutsourcing(hotelId, de, ate)])
+    // esta página é de custos, por isso vai pelos turnos que este hotel paga
+    Promise.all([fetchParametros(hotelId), fetchOutsourcing(hotelId, de, ate, 'pago')])
       .then(([p, ts]) => { setParam(p); setTurnos(ts) })
       .catch(e => toast((e as Error).message, 'erro'))
       .finally(() => setLoading(false))
@@ -136,9 +138,9 @@ export default function HkOutsourcing() {
       {podeEscrever && hotelId && (
         <div className="card p-4">
           <h3 className="text-sm font-semibold text-slate-700">Juntar um turno</h3>
-          <NovoTurno
-            mes={mes}
-            onJuntar={async t => { await juntarTurno(hotelId, t); carregar() }}
+          <FormTurno
+            mes={mes} hoteis={hotels} pagador={hotelId}
+            onGravar={async (t, onde) => { await juntarTurno(hotelId, t, onde); carregar() }}
           />
         </div>
       )}
@@ -150,6 +152,7 @@ export default function HkOutsourcing() {
               <tr className="border-b border-slate-200 text-left text-[11px] uppercase tracking-wide text-slate-500">
                 <th className="th">Dia</th>
                 <th className="th">Nome</th>
+                <th className="th">Onde</th>
                 <th className="th">Horário</th>
                 <th className="th text-right">Almoço</th>
                 <th className="th text-right">Horas</th>
@@ -170,22 +173,37 @@ export default function HkOutsourcing() {
                       {t.nome}
                       {t.feriado && <span className="ml-1.5 chip bg-amber-100 text-amber-800">feriado</span>}
                     </td>
+                    <td className="td text-slate-500">
+                      {t.hotel_trabalhado === t.hotel_id
+                        ? <span className="text-slate-300">aqui</span>
+                        : (
+                          <span className="chip bg-amber-100 text-amber-800">
+                            {hotelCurto(hotels.find(h => h.id === t.hotel_trabalhado)?.name)}
+                          </span>
+                        )}
+                    </td>
                     <td className="td tabular-nums text-slate-500">
                       {t.hora_inicio}–{t.hora_fim}
                     </td>
                     <td className="td text-right tabular-nums text-slate-500">{t.almoco_min}min</td>
                     <td className="td text-right tabular-nums">{h1(c.horas)}</td>
                     <td className="td text-right font-semibold tabular-nums">{money(c.comIva)}</td>
-                    <td className="td text-right">
+                    <td className="td whitespace-nowrap text-right">
                       {podeEscrever && (
-                        <button
-                          className="text-slate-400 hover:text-red-600"
-                          title="Apagar"
-                          onClick={async () => {
-                            if (!confirm(`Apagar o turno de ${t.nome} em ${dmy(t.dia)}?`)) return
-                            await apagarTurno(t.id); carregar()
-                          }}
-                        >✕</button>
+                        <>
+                          <button
+                            className="mr-2 text-xs text-slate-500 hover:text-brand-700 hover:underline"
+                            onClick={() => setAEditar(t)}
+                          >editar</button>
+                          <button
+                            className="text-slate-400 hover:text-red-600"
+                            title="Apagar"
+                            onClick={async () => {
+                              if (!confirm(`Apagar o turno de ${t.nome} em ${dmy(t.dia)}?`)) return
+                              await apagarTurno(t.id); carregar()
+                            }}
+                          >✕</button>
+                        </>
                       )}
                     </td>
                   </tr>
@@ -215,25 +233,54 @@ export default function HkOutsourcing() {
           </dl>
         </div>
       </div>
+
+      {aEditar && hotelId && (
+        <Modal open onClose={() => setAEditar(null)} title="Turno" wide>
+          <FormTurno
+            mes={mes} hoteis={hotels} pagador={hotelId} inicial={aEditar}
+            onGravar={async (t, onde) => {
+              await guardarTurno(aEditar.id, { ...t, hotel_trabalhado: onde })
+              setAEditar(null); carregar(); toast('Turno actualizado')
+            }}
+          />
+        </Modal>
+      )}
     </div>
   )
 }
 
+/** Nome curto do hotel, que "chic&basic Tokyo Hoose" não cabe numa célula. */
+function hotelCurto(nome?: string) {
+  if (!nome) return '—'
+  return nome.replace(/^chic&basic\s*/i, '').trim() || nome
+}
+
 /**
- * Um turno de gente de fora. O dia arranca no mês que se está a ver, para não
- * ser preciso navegar até lá — mas se o mês for o corrente arranca em hoje.
+ * Um turno de gente de fora, para criar ou para corrigir.
+ *
+ * O dia arranca no mês que se está a ver, para não ser preciso navegar até lá.
+ * E há dois hotéis em jogo: quem paga é o hotel em que se está, mas o trabalho
+ * pode ter sido feito noutro — é isso que "Onde trabalhou" diz.
  */
-function NovoTurno({
-  mes, onJuntar,
+function FormTurno({
+  mes, hoteis, pagador, inicial, onGravar,
 }: {
   mes: string
-  onJuntar: (t: Omit<Turno, 'id'>) => Promise<void>
+  hoteis: { id: string; name: string }[]
+  pagador: string
+  inicial?: Turno
+  onGravar: (t: TurnoNovo, trabalhadoEm: string) => Promise<void>
 }) {
   const hoje = todayISO()
-  const [t, setT] = useState({
+  const [t, setT] = useState<TurnoNovo>(inicial ? {
+    dia: inicial.dia, nome: inicial.nome, feriado: inicial.feriado,
+    hora_inicio: inicial.hora_inicio, hora_fim: inicial.hora_fim,
+    almoco_min: inicial.almoco_min,
+  } : {
     dia: hoje.slice(0, 7) === mes ? hoje : `${mes}-01`,
     nome: '', feriado: false, hora_inicio: '09:00', hora_fim: '17:30', almoco_min: 30,
   })
+  const [onde, setOnde] = useState(inicial?.hotel_trabalhado ?? pagador)
   const [aGravar, setAGravar] = useState(false)
   const minutos = minutosDoTurno(t)
 
@@ -249,6 +296,15 @@ function NovoTurno({
         <input className="input h-9 text-sm" value={t.nome}
                placeholder="quem veio"
                onChange={e => setT({ ...t, nome: e.target.value })} />
+      </div>
+      <div>
+        <label className="label">Onde trabalhou</label>
+        <select className="input h-9 w-auto text-sm" value={onde}
+                onChange={e => setOnde(e.target.value)}>
+          {hoteis.map(h => (
+            <option key={h.id} value={h.id}>{hotelCurto(h.name)}</option>
+          ))}
+        </select>
       </div>
       <div>
         <label className="label">Entrada</label>
@@ -277,11 +333,19 @@ function NovoTurno({
         onClick={async () => {
           setAGravar(true)
           try {
-            await onJuntar({ ...t, nome: t.nome.trim() })
-            setT({ ...t, nome: '' })
+            await onGravar({ ...t, nome: t.nome.trim() }, onde)
+            if (!inicial) setT({ ...t, nome: '' })
           } finally { setAGravar(false) }
         }}
-      >{aGravar ? 'A juntar…' : 'Juntar'}</button>
+      >{aGravar ? 'A gravar…' : inicial ? 'Gravar' : 'Juntar'}</button>
+
+      {onde !== pagador && (
+        <p className="w-full text-xs text-amber-700">
+          Este turno é pago por este hotel mas as horas contam para o{' '}
+          {hotelCurto(hoteis.find(h => h.id === onde)?.name)} — é lá que aparecem na produção
+          do dia.
+        </p>
+      )}
     </div>
   )
 }

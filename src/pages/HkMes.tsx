@@ -15,7 +15,7 @@ import {
   apagarLimpeza, apagarTurno, balanco, corDoBalanco, custoDoTurno, definirLimpezaDoDia,
   fetchDias, fetchDoTurno, fetchLimpezas, fetchOutsourcing, fetchParametros, guardarDias,
   horas, juntarLimpeza, juntarTurno, minutosDoTurno, pessoasTexto,
-  type Dia, type DoTurno, type Limpeza, type Parametros, type Turno,
+  type Dia, type DoTurno, type Limpeza, type Parametros, type Turno, type TurnoNovo,
 } from '../lib/housekeeping'
 import { diaSemanaCurto, dmy, lastDayOfMonth, money, qty, todayISO } from '../lib/format'
 import { Loading, NumInput, Spinner, StatCard, useToast } from '../components/ui'
@@ -521,10 +521,13 @@ function Detalhe({
   onNota: (t: string | null) => void
   onJuntarLimpeza: (descricao: string, minutos: number) => Promise<void>
   onApagarLimpeza: (id: string) => Promise<void>
-  onJuntarTurno: (t: Omit<Turno, 'id' | 'dia'>) => Promise<void>
+  onJuntarTurno: (t: Omit<TurnoNovo, 'dia'>) => Promise<void>
   onApagarTurno: (id: string) => Promise<void>
 }) {
-  const custoTotal = l.outsourcing.reduce((s, t) => s + custoDoTurno(t, param).comIva, 0)
+  // as horas são de quem trabalhou aqui; o custo só é nosso quando somos nós a pagar
+  const custoTotal = l.outsourcing
+    .filter(t => t.hotel_id === param.hotel_id)
+    .reduce((s, t) => s + custoDoTurno(t, param).comIva, 0)
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
@@ -598,16 +601,26 @@ function Detalhe({
           <div className="mt-2 space-y-1">
             {l.outsourcing.map(t => {
               const c = custoDoTurno(t, param)
+              const paganos = t.hotel_id === param.hotel_id
               return (
                 <div key={t.id} className="flex flex-wrap items-center gap-2 text-sm">
                   <span className="min-w-0 flex-1 truncate text-slate-700">
                     {t.nome}
                     {t.feriado && <span className="ml-1.5 chip bg-amber-100 text-amber-800">feriado</span>}
+                    {!paganos && (
+                      <span className="ml-1.5 chip bg-slate-100 text-slate-600"
+                            title="as horas contam aqui, o custo é do hotel que paga">
+                        pago por outro hotel
+                      </span>
+                    )}
                   </span>
                   <span className="shrink-0 tabular-nums text-slate-500">
                     {t.hora_inicio}–{t.hora_fim}
                   </span>
-                  <span className="shrink-0 tabular-nums text-slate-700">{money(c.comIva)}</span>
+                  <span className={`shrink-0 tabular-nums ${
+                    paganos ? 'text-slate-700' : 'text-slate-300'}`}>
+                    {paganos ? money(c.comIva) : '—'}
+                  </span>
                   {podeEscrever && (
                     <button className="shrink-0 rounded px-1 text-slate-400 hover:text-red-600"
                             disabled={ocupado} onClick={() => onApagarTurno(t.id)}>✕</button>
@@ -658,7 +671,7 @@ function NovoTurno({
   ocupado, onJuntar,
 }: {
   ocupado: boolean
-  onJuntar: (t: Omit<Turno, 'id' | 'dia'>) => Promise<void>
+  onJuntar: (t: Omit<TurnoNovo, 'dia'>) => Promise<void>
 }) {
   const [t, setT] = useState({
     nome: '', feriado: false, hora_inicio: '09:00', hora_fim: '17:30', almoco_min: 30,
