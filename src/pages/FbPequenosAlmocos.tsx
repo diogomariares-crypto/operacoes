@@ -53,7 +53,7 @@ export default function FbPequenosAlmocos() {
 
   const [d, setD] = useState<Dados | null>(null)
   const [loading, setLoading] = useState(true)
-  const [ano, setAno] = useLembrado<number | null>('fb.pa.ano', null)
+  const [ano, setAno] = useLembrado<number | null>('fb.pa.ano', null, { doDia: true })
   const [form, setForm] = useState<Rascunho | null>(null)
   const [aGravar, setAGravar] = useState(false)
 

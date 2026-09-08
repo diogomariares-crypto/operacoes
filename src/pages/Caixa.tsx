@@ -46,7 +46,7 @@ export default function CaixaPage() {
 
   const [caixas, setCaixas] = useState<Caixa[]>([])
   const [caixaId, setCaixaId] = useLembrado('caixa.id', '')
-  const [mes, setMes] = useLembrado('caixa.mes', mesCorrente, ehMes)
+  const [mes, setMes] = useLembrado('caixa.mes', mesCorrente, { valido: ehMes, doDia: true })
   const [d, setD] = useState<Dados | null>(null)
   const [loading, setLoading] = useState(true)
   const [erro, setErro] = useState<string | null>(null)

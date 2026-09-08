@@ -15,8 +15,13 @@ export default function FbDashboard() {
   const toast = useToast()
   const { hotels, hotelId, setHotelId } = useApp()
 
-  const [ano, setAno] = useLembrado('fb.ano', () => new Date().getFullYear())
-  const [mes, setMes] = useLembrado<number | null>('fb.mes', null)
+  // O painel abre no mês em que estamos. A escolha guarda-se enquanto se anda
+  // a trabalhar, mas caduca à meia-noite: um mês escolhido na semana passada
+  // não devia ser o que aparece hoje por defeito.
+  const [ano, setAno] = useLembrado(
+    'fb.ano', () => new Date().getFullYear(), { doDia: true })
+  const [mes, setMes] = useLembrado<number | null>(
+    'fb.mes', () => new Date().getMonth() + 1, { doDia: true })
   const [svc, setSvc] = useState('all')
   const [met, setMet] = useState<Metrica>('eur')
   const [d, setD] = useState<Dash | null>(null)

@@ -48,7 +48,7 @@ export default function HkMes() {
   const toast = useToast()
   const podeEscrever = canWrite('HSK')
 
-  const [mes, setMes] = useLembrado('hk.mes', mesCorrente, ehMes)
+  const [mes, setMes] = useLembrado('hk.mes', mesCorrente, { valido: ehMes, doDia: true })
   const [param, setParam] = useState<Parametros | null>(null)
   const [linhas, setLinhas] = useState<Linha[]>([])
   const [original, setOriginal] = useState<Record<string, Linha>>({})

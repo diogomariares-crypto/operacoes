@@ -15,7 +15,7 @@ export default function HkOutsourcing() {
   const toast = useToast()
   const podeEscrever = canWrite('HSK')
 
-  const [mes, setMes] = useLembrado('hk.mes', mesCorrente, ehMes)
+  const [mes, setMes] = useLembrado('hk.mes', mesCorrente, { valido: ehMes, doDia: true })
   const [ano, setAno] = useLembrado('hk.ano', false)
   const [turnos, setTurnos] = useState<Turno[]>([])
   const [param, setParam] = useState<Parametros | null>(null)

@@ -16,7 +16,7 @@ type Linha = { d: Dia; b: Balanco }
 export default function HkMapa() {
   const { hotelId } = useApp()
   const nav = useNavigate()
-  const [mes, setMes] = useLembrado('hk.mes', mesCorrente, ehMes)
+  const [mes, setMes] = useLembrado('hk.mes', mesCorrente, { valido: ehMes, doDia: true })
   const [param, setParam] = useState<Parametros | null>(null)
   const [linhas, setLinhas] = useState<Linha[]>([])
   const [ano, setAno] = useState<Linha[]>([])

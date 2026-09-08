@@ -46,7 +46,7 @@ export default function ContagemMensal() {
 
   const [items, setItems] = useState<Item[]>([])
   const [periods, setPeriods] = useState<Period[]>([])
-  const [month, setMonth] = useLembrado('inv.mes', mesCorrente, ehMes)
+  const [month, setMonth] = useLembrado('inv.mes', mesCorrente, { valido: ehMes, doDia: true })
   const [period, setPeriod] = useState<Period | null>(null)
   const [entries, setEntries] = useState<Record<string, Entry>>({})
   const [loading, setLoading] = useState(true)
