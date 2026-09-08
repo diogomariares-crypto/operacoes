@@ -34,34 +34,56 @@ export default function BarrasAno({
   if (!dados.length) return null
 
   const W = 720, H = altura, mT = 16, mB = 32, mL = 52, mR = 8
-  const bruto = Math.max(...dados.flatMap(d => [d.a ?? 0, d.b ?? 0]), 1) * 1.06
-  const base = Math.pow(10, Math.floor(Math.log10(bruto / 4)))
-  const passoEixo = [1, 2, 2.5, 5, 10].map(f => f * base).find(v => v * 4 >= bruto) ?? bruto / 4
-  const max = passoEixo * 4
+
+  /*
+   * Há séries que descem abaixo de zero — o "pessoas ±" é negativo quando sobra
+   * gente. O eixo tem de as acomodar: escolhe-se um passo redondo que cubra o
+   * maior e o menor valor, e o zero fica onde calhar. Numa série só de valores
+   * positivos o fundo dá zero e o eixo fica como sempre foi.
+   */
+  const valores = dados.flatMap(d => [d.a, d.b]).filter((v): v is number => v != null)
+  const maiorV = Math.max(0, ...valores)
+  const menorV = Math.min(0, ...valores)
+  const amplitude = (maiorV - menorV) * 1.06 || 1
+  const base = Math.pow(10, Math.floor(Math.log10(amplitude / 4)))
+  const passoEixo =
+    [1, 2, 2.5, 5, 10].map(f => f * base).find(v => v * 4 >= amplitude) ?? amplitude / 4
+  const topo = Math.ceil(maiorV / passoEixo) * passoEixo
+  const fundo = Math.floor(menorV / passoEixo) * passoEixo
+  const alcance = topo - fundo || passoEixo
+  const marcas: number[] = []
+  for (let v = fundo; v <= topo + passoEixo / 2; v += passoEixo) marcas.push(Number(v.toFixed(6)))
+
   const pH = H - mT - mB, pW = W - mL - mR
   const passo = pW / dados.length
   const bw = Math.max(2, Math.min(magro ? 9 : 22, (passo - (magro ? 3 : 8)) / 2))
-  const y = (v: number) => mT + pH - (v / max) * pH
+  const y = (v: number) => mT + pH - ((v - fundo) / alcance) * pH
+  const yZero = y(0)
+  /** A barra cresce a partir do zero, para cima ou para baixo. */
+  const barra = (v: number) => ({ y: Math.min(yZero, y(v)), height: Math.abs(y(v) - yZero) })
 
   const marca = (v: number) =>
-    max >= 8000 ? `${Math.round(v / 1000)}k` : v < 10 ? v.toFixed(1).replace('.', ',') : String(Math.round(v))
+    v === 0 ? '0'
+      : topo >= 8000 ? `${Math.round(v / 1000)}k`
+      : Math.abs(v) < 10 ? v.toFixed(1).replace('.', ',')
+      : String(Math.round(v))
 
   return (
     <div ref={caixa} className="relative">
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img"
            onMouseLeave={() => setTip(null)}>
-        {[0, 1, 2, 3, 4].map(i => {
-          const v = max / 4 * i
-          return (
-            <g key={i}>
-              <line x1={mL} y1={y(v)} x2={W - mR} y2={y(v)} stroke="#e2e8f0" />
-              <text x={mL - 8} y={y(v) + 4} textAnchor="end" fontSize="10.5" fill="#94a3b8">
-                {marca(v)}
-              </text>
-            </g>
-          )
-        })}
-        <line x1={mL} y1={mT + pH} x2={W - mR} y2={mT + pH} stroke="#cbd5e1" />
+        {marcas.map(v => (
+          <g key={v}>
+            <line x1={mL} y1={y(v)} x2={W - mR} y2={y(v)}
+                  stroke={v === 0 ? '#cbd5e1' : '#e2e8f0'} />
+            <text x={mL - 8} y={y(v) + 4} textAnchor="end" fontSize="10.5"
+                  fill={v === 0 ? '#64748b' : '#94a3b8'}>
+              {marca(v)}
+            </text>
+          </g>
+        ))}
+        {/* a linha do zero é a que se lê, mesmo quando não é o fundo do gráfico */}
+        <line x1={mL} y1={yZero} x2={W - mR} y2={yZero} stroke="#94a3b8" />
 
         {dados.map((d, i) => {
           const cx = mL + passo * i + passo / 2
@@ -82,11 +104,11 @@ export default function BarrasAno({
               )}
               <rect x={cx - passo / 2} y={mT - 6} width={passo} height={pH + 12} fill="transparent" />
               {d.b != null && (
-                <rect x={cx - bw - 1} y={y(d.b)} width={bw} height={mT + pH - y(d.b)}
+                <rect x={cx - bw - 1} {...barra(d.b)} width={bw}
                       rx={2.5} fill={COR_B} />
               )}
               {d.a != null && (
-                <rect x={cx + 1} y={y(d.a)} width={bw} height={mT + pH - y(d.a)}
+                <rect x={cx + 1} {...barra(d.a)} width={bw}
                       rx={2.5} fill={COR_A}
                       opacity={d.parcial ? 0.55 : 1}
                       stroke={d.parcial ? COR_A : undefined}

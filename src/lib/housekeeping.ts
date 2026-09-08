@@ -341,8 +341,11 @@ export async function apagarTurno(id: string) {
 /* ------------------------------------------------ quartos e saídas do turno */
 
 export interface DoTurno {
-  /** Ocupados que ficam — já com as saídas descontadas. */
-  quartos: number
+  /**
+   * Ocupados que ficam. Nulo quando não há relatório da véspera e por isso não
+   * se pode saber — melhor um traço do que um número inventado.
+   */
+  quartos: number | null
   saidas: number
 }
 
@@ -350,25 +353,45 @@ export interface DoTurno {
  * O trabalho do dia, vindo do relatório de turno. O `day_offset` zero é o
  * próprio dia; os outros são previsão e não servem.
  *
- * O relatório dá o total de quartos ocupados e as saídas. O que interessa ao
- * housekeeping é a divisão entre os dois tipos de limpeza, e as saídas já estão
- * dentro dos ocupados — por isso tiram-se: ocupados − saídas = os que ficam.
+ * O housekeeping limpa hoje os quartos que foram dormidos esta noite — ou seja,
+ * a ocupação de ONTEM. Os que saem hoje levam limpeza completa; os restantes
+ * ficam e levam arrumo de continuação:
+ *
+ *     ocupados que ficam (hoje) = ocupados no relatório de ontem − saídas de hoje
+ *
+ * O relatório de um dia diz a ocupação da noite que aí começa, já depois das
+ * saídas e das entradas desse dia — por isso é o da véspera que conta. Usar o do
+ * próprio dia dava uma média de 2,45 quartos de erro; com o da véspera desce
+ * para 1,17, e bate certo em metade dos dias.
  */
 export async function fetchDoTurno(
   hotelId: string, de: string, ate: string,
 ): Promise<Record<string, DoTurno>> {
+  // um dia a mais para trás, que é de onde vem a ocupação do primeiro dia
+  const vespera = new Date(`${de}T12:00:00`)
+  vespera.setDate(vespera.getDate() - 1)
   const { data, error } = await supabase
     .from('occupancy').select('report_date, occ_rooms, departures')
     .eq('hotel_id', hotelId).eq('day_offset', 0)
-    .gte('report_date', de).lte('report_date', ate)
+    .gte('report_date', vespera.toISOString().slice(0, 10)).lte('report_date', ate)
   if (error) throw error
+
+  const ocupados: Record<string, number> = {}
+  for (const r of data ?? []) ocupados[r.report_date] = num(r.occ_rooms)
+
   const fora: Record<string, DoTurno> = {}
   for (const r of data ?? []) {
+    if (r.report_date < de) continue
     const saidas = num(r.departures)
-    // nunca abaixo de zero: um relatório com mais saídas do que ocupados está
-    // errado, e um número negativo aqui só espalhava o erro pelas contas
-    const ficam = Math.max(0, num(r.occ_rooms) - saidas)
-    fora[r.report_date] = { quartos: ficam, saidas }
+    const d = new Date(`${r.report_date}T12:00:00`)
+    d.setDate(d.getDate() - 1)
+    const ontem = ocupados[d.toISOString().slice(0, 10)]
+    fora[r.report_date] = {
+      // sem relatório da véspera não há como saber; nunca abaixo de zero, que
+      // um relatório com mais saídas do que ocupados está errado
+      quartos: ontem == null ? null : Math.max(0, ontem - saidas),
+      saidas,
+    }
   }
   return fora
 }

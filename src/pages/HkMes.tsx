@@ -486,7 +486,7 @@ function Celula({
   dia: string
   campo: string
   valor: number
-  doTurno?: number
+  doTurno?: number | null
   podeEscrever: boolean
   onChange: (n: number) => void
 }) {
@@ -531,7 +531,10 @@ function Detalhe({
         <h4 className="text-sm font-semibold text-slate-700">{dmy(l.dia)}</h4>
         {l.doTurno && (
           <span className="text-xs text-slate-500">
-            o turno diz {qty(l.doTurno.quartos)} de continuação e {qty(l.doTurno.saidas)} saídas
+            o turno diz{' '}
+            {l.doTurno.quartos == null
+              ? `${qty(l.doTurno.saidas)} saídas (sem relatório da véspera para saber os que ficam)`
+              : `${qty(l.doTurno.quartos)} de continuação e ${qty(l.doTurno.saidas)} saídas`}
           </span>
         )}
         {ocupado && <span className="flex items-center gap-1 text-xs text-slate-500">

@@ -150,22 +150,22 @@ export default function HkMapa() {
                 title={l
                   ? `${dmy(iso)} · ${qty(l.d.quartos_ocupados)} de continuação, ${qty(l.d.saidas)} saídas, ${qty(l.d.staff)} turnos · ${horas(l.b.diferenca)}`
                   : `${dmy(iso)} — por registar`}
-                className={`aspect-square rounded-lg border p-1.5 text-left ${
+                className={`h-[72px] rounded-lg border px-2 py-1.5 text-left ${
                   l ? 'border-slate-200' : 'border-dashed border-slate-200'}`}
                 style={{ backgroundColor: l ? corDoBalanco(l.b.pessoas) : undefined }}
               >
-                <div className="text-[11px] text-slate-500">{i + 1}</div>
+                <div className="text-[10px] leading-none text-slate-500">{i + 1}</div>
                 {l ? (
                   <>
-                    <div className="text-sm font-semibold tabular-nums leading-tight text-slate-900">
+                    <div className="mt-0.5 text-sm font-semibold tabular-nums leading-tight text-slate-900">
                       {pessoasTexto(l.b.pessoas)}
                     </div>
-                    <div className="text-[10px] leading-tight text-slate-600">
+                    <div className="text-[10px] leading-tight text-slate-500">
                       {qty(l.d.staff)} turnos
                     </div>
                   </>
                 ) : (
-                  <div className="text-[10px] text-slate-300">—</div>
+                  <div className="mt-1 text-[10px] text-slate-300">—</div>
                 )}
               </button>
             )
