@@ -21,6 +21,12 @@ const VAZIO: Entry = { qty: 0, parcelas: [], quebras: 0, motivo: null, comentari
 
 /** Arredonda a 2 casas para o vírgula flutuante não deixar 49,999999. */
 const arred = (n: number) => Math.round(n * 100) / 100
+
+/** O peso de uma linha na lista que está à vista. Abaixo de 0,1% não vale a pena. */
+const peso = (fraccao: number) => {
+  const p = fraccao * 100
+  return p < 0.1 ? '<0,1%' : `${p.toLocaleString('pt-PT', { maximumFractionDigits: 1 })}%`
+}
 const soma = (ns: number[]) => arred(ns.reduce((a, b) => a + b, 0))
 
 /**
@@ -38,6 +44,19 @@ function lerParcelas(texto: string): number[] {
 
 const MODO_KEY = 'contagem-fb-modo'
 
+/** Sentinela da vista sem categoria — o inventário todo de uma vez. */
+const TODAS = '\u0000todas'
+
+type Ordem = 'fornecedor' | 'valor-desc' | 'valor-asc' | 'preco-desc' | 'preco-asc'
+
+const ORDENS: { v: Ordem; rot: string }[] = [
+  { v: 'fornecedor', rot: 'Fornecedor' },
+  { v: 'valor-desc', rot: 'Valor ↓  (maior primeiro)' },
+  { v: 'valor-asc', rot: 'Valor ↑  (menor primeiro)' },
+  { v: 'preco-desc', rot: 'Preço unitário ↓' },
+  { v: 'preco-asc', rot: 'Preço unitário ↑' },
+]
+
 export default function ContagemMensal() {
   const { hotelId } = useApp()
   const { canWrite, email } = useAuth()
@@ -53,6 +72,7 @@ export default function ContagemMensal() {
   const [saving, setSaving] = useState(0)
   const [cat, setCat] = useState<string | null>(null)
   const [busca, setBusca] = useState('')
+  const [ordem, setOrdem] = useLembrado<Ordem>('inv.fb.ordem', 'fornecedor')
   const [aberto, setAberto] = useState<string | null>(null)
   const [modo, setModo] = useState<'substituir' | 'somar'>(
     () => (localStorage.getItem(MODO_KEY) === 'somar' ? 'somar' : 'substituir'),
@@ -189,11 +209,31 @@ export default function ContagemMensal() {
         (i.ref ?? '').toLowerCase().includes(q) ||
         (i.supplier ?? '').toLowerCase().includes(q))
     }
+    if (cat === TODAS) return items
     return items.filter(i => (i.category ?? 'Sem categoria') === cat)
   }, [items, busca, cat])
 
+  /**
+   * Por fornecedor é como se conta — anda-se de prateleira em prateleira. Por
+   * valor é como se olha: o que pesa mais e onde um preço errado salta à vista.
+   * Nessa vista os fornecedores desaparecem, senão a ordem não seria a ordem.
+   */
   const grupos = useMemo(() => {
-    if (busca.trim()) return [{ fornecedor: '', itens: filtrados }]
+    const porValor = ordem !== 'fornecedor'
+    if (busca.trim() || porValor) {
+      const lista = [...filtrados]
+      if (porValor) {
+        const chave = (i: Item) => ordem.startsWith('valor')
+          ? valor(i, entries[i.id])
+          : Number(i.unit_price_eur ?? 0)
+        const sinal = ordem.endsWith('-desc') ? -1 : 1
+        lista.sort((a, b) => {
+          const d = (chave(a) - chave(b)) * sinal
+          return d !== 0 ? d : a.name.localeCompare(b.name, 'pt')
+        })
+      }
+      return [{ fornecedor: '', itens: lista }]
+    }
     const map: Record<string, Item[]> = {}
     for (const i of filtrados) {
       const f = i.supplier || 'Sem fornecedor'
@@ -202,7 +242,20 @@ export default function ContagemMensal() {
     return Object.entries(map)
       .sort(([a], [b]) => a.localeCompare(b, 'pt'))
       .map(([fornecedor, itens]) => ({ fornecedor, itens }))
-  }, [filtrados, busca])
+  }, [filtrados, busca, ordem, entries])
+
+  /** O que está à vista vale isto — muda com a categoria e com a pesquisa. */
+  const totalAVista = useMemo(
+    () => filtrados.reduce((s, i) => s + valor(i, entries[i.id]), 0), [filtrados, entries])
+
+  /**
+   * Contado mas sem preço: entra na contagem e vale zero, por isso some no fundo
+   * de qualquer ordenação por valor. É o erro de preço mais fácil de não ver.
+   */
+  const semPreco = useMemo(
+    () => items.filter(i =>
+      (entries[i.id]?.qty ?? 0) > 0 && Number(i.unit_price_eur ?? 0) === 0),
+    [items, entries])
 
   if (loading) return <Loading />
 
@@ -235,6 +288,14 @@ export default function ContagemMensal() {
               </button>
             ))}
           </div>
+        </div>
+
+        <div>
+          <label className="label">Ordenar por</label>
+          <select className="input" value={ordem}
+                  onChange={e => setOrdem(e.target.value as Ordem)}>
+            {ORDENS.map(o => <option key={o.v} value={o.v}>{o.rot}</option>)}
+          </select>
         </div>
 
         <div className="ml-auto flex items-center gap-2 text-sm">
@@ -271,6 +332,15 @@ export default function ContagemMensal() {
           ))}
         </div>
 
+        {ordem !== 'fornecedor' && (
+          <p className="w-full text-xs text-slate-500">
+            Ordenado por {ordem.startsWith('valor') ? 'valor' : 'preço unitário'}, sem
+            separar por fornecedor. Serve para ver o que pesa mais e apanhar um preço
+            errado; para contar, volta a <strong>Fornecedor</strong>, que é a ordem por
+            que se anda pelas prateleiras.
+          </p>
+        )}
+
         {modo === 'somar' && (
           <p className="w-full text-xs text-slate-500">
             Escreve o que encontraste e carrega em <strong>Somar</strong> — cada parcela fica guardada,
@@ -286,6 +356,14 @@ export default function ContagemMensal() {
           <div className="text-[11px] uppercase tracking-wide text-slate-500">Total</div>
           <div className="text-base font-semibold tabular-nums text-brand-700">{money(totalGeral)}</div>
         </div>
+        {(busca.trim() || (cat && cat !== TODAS)) && (
+          <div className="card shrink-0 border-brand-200 px-3 py-2">
+            <div className="text-[11px] uppercase tracking-wide text-slate-500">À vista</div>
+            <div className="text-base font-semibold tabular-nums text-slate-800">
+              {money(totalAVista)}
+            </div>
+          </div>
+        )}
         {categorias.map(c => (
           <div key={c} className="card shrink-0 px-3 py-2">
             <div className="text-[11px] uppercase tracking-wide text-slate-500">{c}</div>
@@ -293,6 +371,18 @@ export default function ContagemMensal() {
           </div>
         ))}
       </div>
+
+      {semPreco.length > 0 && (
+        <div className="rounded-lg bg-amber-50 px-4 py-2.5 text-sm text-amber-800">
+          <strong>{semPreco.length}{' '}
+          {semPreco.length === 1 ? 'item contado sem preço' : 'itens contados sem preço'}</strong>{' '}
+          — entram na contagem mas valem zero, e por isso não aparecem em cima quando
+          se ordena por valor:{' '}
+          {semPreco.slice(0, 6).map(i => i.name).join(', ')}
+          {semPreco.length > 6 && ` e mais ${semPreco.length - 6}`}.
+          {' '}O preço corrige-se em <strong>Itens</strong>.
+        </div>
+      )}
 
       {fechado && (
         <div className="rounded-lg bg-brand-50 px-4 py-2.5 text-sm text-brand-800">
@@ -312,6 +402,14 @@ export default function ContagemMensal() {
       {/* separadores */}
       {!busca.trim() && (
         <div className="flex gap-2 overflow-x-auto pb-1">
+          <button
+            onClick={() => setCat(TODAS)}
+            className={`shrink-0 rounded-full px-3 py-1.5 text-sm font-medium ${
+              cat === TODAS ? 'bg-brand-500 text-white' : 'bg-white text-slate-600 border border-slate-200'
+            }`}
+          >
+            Todas <span className="opacity-70">{items.length}</span>
+          </button>
           {categorias.map(c => {
             const n = items.filter(i => (i.category ?? 'Sem categoria') === c).length
             return (
@@ -388,7 +486,7 @@ export default function ContagemMensal() {
                         </div>
                       )}
 
-                      <div className="w-20 shrink-0 text-right">
+                      <div className="w-24 shrink-0 text-right">
                         {modo === 'somar' && (
                           <div className="text-sm font-semibold tabular-nums text-slate-800">
                             {qty(e?.qty ?? 0)}
@@ -399,6 +497,11 @@ export default function ContagemMensal() {
                           : 'text-sm font-semibold text-slate-700'}`}>
                           {money(valor(i, e))}
                         </div>
+                        {ordem.startsWith('valor') && totalAVista > 0 && valor(i, e) > 0 && (
+                          <div className="text-[11px] tabular-nums text-slate-400">
+                            {peso(valor(i, e) / totalAVista)}
+                          </div>
+                        )}
                       </div>
                     </div>
 
