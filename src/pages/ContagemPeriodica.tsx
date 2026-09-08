@@ -12,6 +12,10 @@ import { Loading, Modal, NumInput, Spinner, useToast } from '../components/ui'
 import { useLembrado } from '../lib/lembrar'
 import { supabase } from '../lib/supabase'
 import ARepor from '../components/ARepor'
+import {
+  analisar, cobertura, fetchConsumo, fetchFornecedores,
+  type Consumo, type Fornecedor,
+} from '../lib/reposicao'
 
 type Row = Count & { item: Item }
 
@@ -37,6 +41,9 @@ export default function ContagemPeriodica({ dept }: { dept: Department }) {
   const [nova, setNova] = useState<{ data: string; inicio: string; primeira: boolean } | null>(null)
   const [editar, setEditar] = useState<{ inicio: string; data: string; linhas: number } | null>(null)
   const [busca, setBusca] = useState('')
+  // O ritmo a que cada artigo se gasta, para se saber quanto tempo o stock dura.
+  const [consumo, setConsumo] = useState<Record<string, Consumo>>({})
+  const [fornecedores, setFornecedores] = useState<Record<string, Fornecedor>>({})
   const timers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
   const [recarregar, setRecarregar] = useState(0)
   const rowsRef = useRef<Record<string, Row>>({})
@@ -55,6 +62,15 @@ export default function ContagemPeriodica({ dept }: { dept: Department }) {
       .catch(e => toast((e as Error).message, 'erro'))
       .finally(() => setLoading(false))
   }, [hotelId, dept, freq])
+
+  // O ritmo a que cada artigo se gasta e o prazo de cada fornecedor. Sem isto a
+  // coluna "Dura" fica a traço, mas a contagem funciona na mesma.
+  useEffect(() => {
+    if (!hotelId) return
+    Promise.all([fetchConsumo(hotelId, dept), fetchFornecedores()])
+      .then(([c, f]) => { setConsumo(c); setFornecedores(f) })
+      .catch(() => { setConsumo({}); setFornecedores({}) })
+  }, [hotelId, dept, recarregar])
 
   useEffect(() => {
     if (!period) { setRows({}); setRecebido({}); return }
@@ -453,7 +469,7 @@ export default function ContagemPeriodica({ dept }: { dept: Department }) {
 
           {/* tabela */}
           <div className="card overflow-x-auto">
-            <table className="w-full min-w-[820px]">
+            <table className="w-full min-w-[900px]">
               <thead className="border-b border-slate-200 bg-slate-50">
                 <tr>
                   <th className="th">Item</th>
@@ -462,6 +478,10 @@ export default function ContagemPeriodica({ dept }: { dept: Department }) {
                   <th className="th text-right" title="Entradas sem encomenda registada">Outras entradas</th>
                   <th className="th text-right">Valor pago</th>
                   <th className="th text-right">Inv. final</th>
+                  <th className="th text-right"
+                      title="Quanto tempo o inventário final aguenta ao ritmo a que se tem gasto">
+                    Dura
+                  </th>
                   <th className="th text-right">Utilizado</th>
                   <th className="th text-right">Custo</th>
                   <th className="th text-right">€/quarto</th>
@@ -520,6 +540,9 @@ export default function ContagemPeriodica({ dept }: { dept: Department }) {
                       <td className="td w-24">
                         <NumInput value={r.closing_qty} disabled={!podeEscrever}
                                   onChange={n => save(r.item_id, { closing_qty: n })} />
+                      </td>
+                      <td className="td text-right">
+                        <Duracao r={r} consumo={consumo} fornecedores={fornecedores} freq={freq} />
                       </td>
                       <td className={`td text-right tabular-nums ${used < 0 ? 'font-semibold text-red-600' : ''}`}>
                         {qty(used)}
@@ -640,5 +663,45 @@ export default function ContagemPeriodica({ dept }: { dept: Department }) {
         )}
       </Modal>
     </div>
+  )
+}
+
+/**
+ * Quanto tempo o stock contado ainda dura, ao ritmo médio a que se tem gasto.
+ *
+ * É a mesma conta do painel "A repor", mas aqui aparece em todas as linhas e
+ * não só nas que já pedem reposição — a pergunta «isto chega até quando?»
+ * faz-se enquanto se conta, não só depois.
+ *
+ * A vermelho quando o produto acaba antes de uma encomenda nova chegar.
+ */
+function Duracao({
+  r, consumo, fornecedores, freq,
+}: {
+  r: Row
+  consumo: Record<string, Consumo>
+  fornecedores: Record<string, Fornecedor>
+  freq: PeriodKind
+}) {
+  const a = analisar({
+    stock: r.closing_qty,
+    consumo: consumo[r.item_id],
+    fornecedor: r.item.supplier ? fornecedores[r.item.supplier] : undefined,
+    frequencia: freq,
+  })
+  if (a.cobertura == null) {
+    return (
+      <span className="text-sm text-slate-300" title={a.porque}>—</span>
+    )
+  }
+  return (
+    <span
+      className={`text-sm ${a.ruptura ? 'font-semibold text-red-600' : 'text-slate-700'}`}
+      title={a.ruptura
+        ? `Acaba em ${cobertura(a.cobertura)} e a entrega demora ${a.prazo} dias`
+        : `Gasta-se ${qty(a.usadoDia)} ${r.item.unit} por dia`}
+    >
+      {cobertura(a.cobertura)}
+    </span>
   )
 }
