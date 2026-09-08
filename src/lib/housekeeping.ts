@@ -2,11 +2,22 @@
  * Housekeeping — produção e pessoal.
  *
  * A pergunta é sempre a mesma: o trabalho que o dia exige cabe nas pessoas que
- * há? De um lado, os quartos ocupados e as saídas, cada um com o seu tempo. Do
- * outro, os turnos de pessoal mais o outsourcing, menos as limpezas gerais —
- * que saem do mesmo bolo de horas mas não são quartos.
+ * há? De um lado os quartos a limpar, de outro os turnos de pessoal mais o
+ * outsourcing, menos as limpezas gerais — que saem do mesmo bolo de horas mas
+ * não são quartos.
  *
- * Os quartos e as saídas não se escrevem: vêm dos relatórios de turno.
+ * Um quarto limpa-se de duas maneiras, e não custam o mesmo:
+ *
+ *   ocupados — estavam ocupados esta noite e não saem hoje; é um arrumo de
+ *              continuação, mais rápido
+ *   saídas   — estavam ocupados esta noite e saem hoje; é a limpeza completa
+ *
+ * São conjuntos disjuntos: um quarto ou fica ou sai, nunca os dois. Somá-los dá
+ * os quartos limpos no dia. Por isso «ocupados» aqui NÃO é o total de quartos
+ * ocupados do hotel — esse inclui os que saem, e contá-los dos dois lados
+ * inflacionava o trabalho a fazer em cada dia.
+ *
+ * Os dois números não se escrevem: derivam-se do relatório de turno.
  */
 import { supabase } from './supabase'
 
@@ -34,7 +45,9 @@ export const PARAMETROS_BASE: Omit<Parametros, 'hotel_id'> = {
 export interface Dia {
   id: string
   dia: string
+  /** Ocupados que NÃO saem hoje: arrumo de continuação. Não é o total ocupado. */
   quartos_ocupados: number
+  /** Ocupados que saem hoje: limpeza completa. */
   saidas: number
   staff: number
   /** Os rácios em vigor no dia, congelados para o histórico não se reescrever. */
@@ -63,6 +76,10 @@ export interface Turno {
 
 /* ------------------------------------------------------------------ cálculo */
 
+/**
+ * Os dois tipos de limpeza, cada um ao seu tempo. Como não há quartos nos dois
+ * conjuntos, é uma soma simples e nada se conta duas vezes.
+ */
 export const minutosNecessarios = (d: Pick<Dia,
   'quartos_ocupados' | 'saidas' | 'min_por_quarto' | 'min_por_saida'>) =>
   d.quartos_ocupados * d.min_por_quarto + d.saidas * d.min_por_saida
@@ -323,11 +340,19 @@ export async function apagarTurno(id: string) {
 
 /* ------------------------------------------------ quartos e saídas do turno */
 
-export interface DoTurno { quartos: number; saidas: number }
+export interface DoTurno {
+  /** Ocupados que ficam — já com as saídas descontadas. */
+  quartos: number
+  saidas: number
+}
 
 /**
- * Quartos ocupados e saídas por dia, vindos do relatório de turno. O
- * `day_offset` zero é o próprio dia; os outros são previsão e não servem.
+ * O trabalho do dia, vindo do relatório de turno. O `day_offset` zero é o
+ * próprio dia; os outros são previsão e não servem.
+ *
+ * O relatório dá o total de quartos ocupados e as saídas. O que interessa ao
+ * housekeeping é a divisão entre os dois tipos de limpeza, e as saídas já estão
+ * dentro dos ocupados — por isso tiram-se: ocupados − saídas = os que ficam.
  */
 export async function fetchDoTurno(
   hotelId: string, de: string, ate: string,
@@ -339,7 +364,11 @@ export async function fetchDoTurno(
   if (error) throw error
   const fora: Record<string, DoTurno> = {}
   for (const r of data ?? []) {
-    fora[r.report_date] = { quartos: num(r.occ_rooms), saidas: num(r.departures) }
+    const saidas = num(r.departures)
+    // nunca abaixo de zero: um relatório com mais saídas do que ocupados está
+    // errado, e um número negativo aqui só espalhava o erro pelas contas
+    const ficam = Math.max(0, num(r.occ_rooms) - saidas)
+    fora[r.report_date] = { quartos: ficam, saidas }
   }
   return fora
 }

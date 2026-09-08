@@ -25,7 +25,7 @@ export default function HkDefinicoes() {
 
   // Um dia típico, para se ver o efeito de mexer nos números.
   const exemplo = {
-    id: '', dia: '', nota: null, quartos_ocupados: 73, saidas: 25, staff: 5,
+    id: '', dia: '', nota: null, quartos_ocupados: 48, saidas: 25, staff: 5,
     min_por_quarto: p.min_por_quarto, min_por_saida: p.min_por_saida,
     horas_por_turno: p.horas_por_turno,
   }
@@ -50,9 +50,11 @@ export default function HkDefinicoes() {
 
         <div className="mt-3 grid gap-3 sm:grid-cols-3">
           <div>
-            <label className="label">Minutos por quarto ocupado</label>
+            <label className="label">Minutos por quarto de continuação</label>
             <NumInput value={p.min_por_quarto} onChange={n => mudar({ min_por_quarto: n })} />
-            <p className="mt-0.5 text-[11px] text-slate-400">arrumo de continuação</p>
+            <p className="mt-0.5 text-[11px] text-slate-400">
+              ocupado esta noite, não sai hoje
+            </p>
           </div>
           <div>
             <label className="label">Minutos por saída</label>
@@ -66,7 +68,9 @@ export default function HkDefinicoes() {
         </div>
 
         <div className="mt-3 rounded-lg bg-slate-50 px-4 py-3 text-sm text-slate-600">
-          <strong className="text-slate-800">Num dia com 73 quartos, 25 saídas e 5 turnos:</strong>{' '}
+          <strong className="text-slate-800">
+            Num dia com 48 quartos de continuação, 25 saídas e 5 turnos:
+          </strong>{' '}
           precisa de {horas(b.necessarios)} e tem {horas(b.disponiveis)} —{' '}
           {b.diferenca === 0 ? 'fecha certo'
             : b.diferenca > 0 ? `faltam ${horas(b.diferenca)}` : `sobram ${horas(-b.diferenca)}`}

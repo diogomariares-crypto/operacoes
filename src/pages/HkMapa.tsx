@@ -120,7 +120,7 @@ export default function HkMapa() {
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard label="Dias registados" value={T.dias}
-                  hint={`${qty(T.quartos)} quartos · ${qty(T.saidas)} saídas`} />
+                  hint={`${qty(T.quartos + T.saidas)} quartos limpos · ${qty(T.saidas)} saídas`} />
         <StatCard label="Trabalho a fazer" value={horas(T.necessarios)}
                   hint={`${horas(T.disponiveis)} disponíveis`} />
         <StatCard label="Diferença no mês" value={horas(T.necessarios - T.disponiveis)}
@@ -148,7 +148,7 @@ export default function HkMapa() {
                 key={iso}
                 onClick={() => nav('/hk')}
                 title={l
-                  ? `${dmy(iso)} · ${qty(l.d.quartos_ocupados)} quartos, ${qty(l.d.saidas)} saídas, ${qty(l.d.staff)} turnos · ${horas(l.b.diferenca)}`
+                  ? `${dmy(iso)} · ${qty(l.d.quartos_ocupados)} de continuação, ${qty(l.d.saidas)} saídas, ${qty(l.d.staff)} turnos · ${horas(l.b.diferenca)}`
                   : `${dmy(iso)} — por registar`}
                 className={`aspect-square rounded-lg border p-1.5 text-left ${
                   l ? 'border-slate-200' : 'border-dashed border-slate-200'}`}

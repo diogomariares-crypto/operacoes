@@ -211,7 +211,7 @@ export default function HkMes() {
       nota: 'Os dias que tenham várias limpezas discriminadas ficam como estão — '
           + 'um número só não as pode substituir.',
       patch: v => ({ limpezasMin: Math.max(0, Number(v)) }) },
-    { chave: 'quartos', rotulo: 'Quartos ocupados', tipo: 'numero',
+    { chave: 'quartos', rotulo: 'Ocupados (que ficam)', tipo: 'numero',
       nota: 'Isto costuma vir do relatório de turno; só se mexe para corrigir.',
       patch: v => ({ quartos: Math.max(0, Number(v)) }) },
     { chave: 'saidas', rotulo: 'Saídas', tipo: 'numero',
@@ -266,7 +266,9 @@ export default function HkMes() {
           )}
         </div>
         <p className="mt-3 border-t border-slate-100 pt-3 text-xs text-slate-500">
-          Os quartos e as saídas vêm do relatório de turno — só se escrevem para corrigir.
+          <strong>Ocupados</strong> são os quartos que ficam — estavam ocupados esta noite e
+          não saem hoje. <strong>Saídas</strong> são os que saem. Vêm os dois do relatório de
+          turno (as saídas já estão descontadas dos ocupados) e só se escrevem para corrigir.
           Toca no dia para abrir a nota, as limpezas e o outsourcing.
           {podeEscrever && ' Para mexer em vários dias de uma vez, escolhe-os na primeira coluna'
             + ' — o shift-clique apanha o intervalo todo.'}
@@ -274,8 +276,8 @@ export default function HkMes() {
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard label="Quartos no mês" value={qty(T.quartos)}
-                  hint={`${qty(T.saidas)} saídas`} />
+        <StatCard label="Quartos limpos" value={qty(T.quartos + T.saidas)}
+                  hint={`${qty(T.quartos)} de continuação · ${qty(T.saidas)} saídas`} />
         <StatCard label="Turnos de pessoal" value={qty(T.staff)}
                   hint={T.porPreencher
                     ? `${T.porPreencher} dias com quartos e sem pessoal escrito`
@@ -312,8 +314,14 @@ export default function HkMes() {
                 )}
               </th>
               <th className="th">Dia</th>
-              <th className="th !text-right">Quartos</th>
-              <th className="th !text-right">Saídas</th>
+              <th className="th !text-right"
+                  title="Quartos que estavam ocupados e não saem hoje — arrumo de continuação">
+                Ocupados
+              </th>
+              <th className="th !text-right"
+                  title="Quartos que estavam ocupados e saem hoje — limpeza completa">
+                Saídas
+              </th>
               <th className="th !text-right">Turnos</th>
               <th className="th !text-right">Limpezas</th>
               <th className="th !text-right">Outsourc.</th>
@@ -523,7 +531,7 @@ function Detalhe({
         <h4 className="text-sm font-semibold text-slate-700">{dmy(l.dia)}</h4>
         {l.doTurno && (
           <span className="text-xs text-slate-500">
-            o turno diz {qty(l.doTurno.quartos)} quartos e {qty(l.doTurno.saidas)} saídas
+            o turno diz {qty(l.doTurno.quartos)} de continuação e {qty(l.doTurno.saidas)} saídas
           </span>
         )}
         {ocupado && <span className="flex items-center gap-1 text-xs text-slate-500">
