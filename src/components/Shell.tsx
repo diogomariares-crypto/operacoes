@@ -1,13 +1,13 @@
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
 import { useApp } from '../lib/appState'
-import { MODULOS, moduloDoCaminho } from '../lib/modulos'
+import { moduloDoCaminho } from '../lib/modulos'
+import { deptGuardado, esquecerDept, modulosDoDept } from '../lib/departamentos'
 import type { ReactNode } from 'react'
 import { useEffect, useRef, useState } from 'react'
 
 export default function Shell({ children }: { children: ReactNode }) {
-  const { isAdmin, podeVerPainel, podeVerPa, podeVerRh, podeVerLavandaria, podeVerHk,
-          podeVerCaixa, allowedDepartments, email, fullName, roles, signOut } = useAuth()
+  const { podeVerModulo, podeVerPagina, email, fullName, roles, signOut } = useAuth()
   const { hotels, hotelId, setHotelId } = useApp()
   const nav = useNavigate()
   const { pathname } = useLocation()
@@ -27,18 +27,20 @@ export default function Shell({ children }: { children: ReactNode }) {
     return () => { obs.disconnect(); window.removeEventListener('resize', medir) }
   }, [])
 
-  const modulos = MODULOS.filter(m =>
-    (!m.soAdmin || isAdmin) && (!m.soRh || podeVerRh) &&
-    (!m.soLav || podeVerLavandaria) && (!m.soHk || podeVerHk) &&
-    (!m.soCaixa || podeVerCaixa))
+  const dept = deptGuardado()
   const ativo = moduloDoCaminho(pathname)
-  const paginas = ativo.paginas.filter(
-    p => (!p.soAdmin || isAdmin) && (!p.soPainel || podeVerPainel) &&
-         (!p.soPa || podeVerPa) && (!p.soRh || podeVerRh) &&
-         (!p.soLav || podeVerLavandaria) && (!p.soHk || podeVerHk) &&
-         (!p.soCaixa || podeVerCaixa) &&
-         (!p.soEscrita || allowedDepartments.length > 0),
-  )
+
+  /*
+   * A barra mostra os módulos do departamento escolhido. O módulo da página em
+   * que se está entra sempre, mesmo que seja de outro departamento — senão ir a
+   * uma página por link deixava a barra sem nada aceso e sem forma de voltar.
+   */
+  const doDept = modulosDoDept(dept).filter(podeVerModulo)
+  const modulos = doDept.some(m => m.id === ativo.id) || !podeVerModulo(ativo)
+    ? doDept
+    : [...doDept, ativo]
+
+  const paginas = ativo.paginas.filter(podeVerPagina)
 
   // Quando várias páginas correspondem (ex.: /turno e /turno/2026-08-24),
   // só a mais específica fica destacada.
@@ -54,12 +56,18 @@ export default function Shell({ children }: { children: ReactNode }) {
       <header ref={cabecalho} className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur">
         {/* linha 1: identidade, hotel, módulos, conta */}
         <div className="mx-auto flex max-w-7xl items-center gap-3 px-3 py-2.5 sm:px-5">
-          <div className="flex shrink-0 items-center gap-2">
-            <div className="grid h-8 w-8 place-items-center rounded-lg bg-brand-500 text-sm font-bold text-white">
+          <button
+            onClick={() => { esquecerDept(); nav('/entrada') }}
+            title="Trocar de departamento"
+            className="flex shrink-0 items-center gap-2 rounded-lg py-1 pr-1 hover:bg-slate-50"
+          >
+            <span className="grid h-8 w-8 place-items-center rounded-lg bg-brand-500 text-sm font-bold text-white">
               cb
-            </div>
-            <span className="hidden text-sm font-semibold lg:block">Operações</span>
-          </div>
+            </span>
+            <span className="hidden text-sm font-semibold lg:block">
+              {dept ? dept.label : 'Operações'}
+            </span>
+          </button>
 
           <select
             className="input h-9 w-auto max-w-[42vw] py-1 text-sm"

@@ -1,10 +1,12 @@
-import { HashRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { HashRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { AuthProvider, useAuth } from './lib/auth'
 import { AppProvider, useApp } from './lib/appState'
+import { deptGuardado } from './lib/departamentos'
 import { ToastProvider, Loading } from './components/ui'
 import Shell from './components/Shell'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
+import Entrada from './pages/Entrada'
 import Contagem from './pages/Contagem'
 import Encomendas from './pages/Encomendas'
 import Historico from './pages/Historico'
@@ -74,6 +76,7 @@ function SoHk({ children }: { children: React.ReactNode }) {
 
 function Interior() {
   const { ready, error, hotels } = useApp()
+  const { pathname } = useLocation()
   if (!ready) return <Loading />
   if (error) {
     return (
@@ -94,6 +97,14 @@ function Interior() {
       </div>
     )
   }
+  // A entrada é o ecrã de escolher departamento: não leva o Shell, que é
+  // precisamente o que ela existe para configurar.
+  if (pathname === '/entrada') return <Entrada />
+
+  // Sem departamento escolhido, a app abre pela entrada em vez de despejar
+  // todos os módulos de uma vez.
+  if (!deptGuardado() && pathname === '/') return <Navigate to="/entrada" replace />
+
   return (
     <Shell>
       <Routes>

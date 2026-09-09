@@ -24,6 +24,13 @@ interface AuthState {
   podeVerHk: boolean
   /** Vê e conta o dinheiro das caixas: direção e financeiro. */
   podeVerCaixa: boolean
+  /** Este módulo aparece a esta conta? */
+  podeVerModulo: (m: { soAdmin?: boolean; soRh?: boolean; soLav?: boolean
+                       soHk?: boolean; soCaixa?: boolean }) => boolean
+  /** Esta página aparece a esta conta? */
+  podeVerPagina: (p: { soAdmin?: boolean; soPainel?: boolean; soPa?: boolean; soRh?: boolean
+                       soLav?: boolean; soHk?: boolean; soCaixa?: boolean
+                       soEscrita?: boolean }) => boolean
   canWrite: (d: Department) => boolean
   allowedDepartments: Department[]
   signOut: () => Promise<void>
@@ -100,6 +107,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const allowedDepartments = (['FO', 'HSK', 'FB'] as Department[]).filter(canWrite)
 
+  /*
+   * As regras de quem vê o quê ficam aqui, num sítio só. Antes estavam
+   * espalhadas pelo Shell, e agora a Entrada precisa das mesmas — duas cópias
+   * das mesmas condições é como se começa a ter menus que discordam um do outro.
+   */
+  const podeVerModulo = (m: {
+    soAdmin?: boolean; soRh?: boolean; soLav?: boolean; soHk?: boolean; soCaixa?: boolean
+  }) =>
+    (!m.soAdmin || isAdmin) && (!m.soRh || podeVerRh) &&
+    (!m.soLav || podeVerLavandaria) && (!m.soHk || podeVerHk) &&
+    (!m.soCaixa || podeVerCaixa)
+
+  const podeVerPagina = (p: {
+    soAdmin?: boolean; soPainel?: boolean; soPa?: boolean; soRh?: boolean
+    soLav?: boolean; soHk?: boolean; soCaixa?: boolean; soEscrita?: boolean
+  }) =>
+    (!p.soAdmin || isAdmin) && (!p.soPainel || podeVerPainel) &&
+    (!p.soPa || podeVerPa) && (!p.soRh || podeVerRh) &&
+    (!p.soLav || podeVerLavandaria) && (!p.soHk || podeVerHk) &&
+    (!p.soCaixa || podeVerCaixa) &&
+    (!p.soEscrita || allowedDepartments.length > 0)
+
   const value: AuthState = {
     session,
     precisaCodigo,
@@ -116,6 +145,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     podeVerLavandaria,
     podeVerHk,
     podeVerCaixa,
+    podeVerModulo,
+    podeVerPagina,
     canWrite,
     allowedDepartments,
     signOut: async () => { await supabase.auth.signOut() },
