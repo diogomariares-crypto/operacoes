@@ -1,7 +1,7 @@
 import { HashRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { AuthProvider, useAuth } from './lib/auth'
 import { AppProvider, useApp } from './lib/appState'
-import { deptGuardado } from './lib/departamentos'
+import { deptGuardado, jaPassouPelaEntrada } from './lib/departamentos'
 import { ToastProvider, Loading } from './components/ui'
 import Shell from './components/Shell'
 import Login from './pages/Login'
@@ -101,9 +101,12 @@ function Interior() {
   // precisamente o que ela existe para configurar.
   if (pathname === '/entrada') return <Entrada />
 
-  // Sem departamento escolhido, a app abre pela entrada em vez de despejar
-  // todos os módulos de uma vez.
-  if (!deptGuardado() && pathname === '/') return <Navigate to="/entrada" replace />
+  // Sem departamento escolhido, a app começa pela entrada em vez de despejar
+  // todos os módulos de uma vez. Antes isto só valia para o caminho '/', o que
+  // na prática escondia a entrada de quem reabre a app num link mais fundo —
+  // e essa é a maneira normal de a usar. Passa a valer uma vez por sessão:
+  // escolhido o departamento, ou já vista a entrada, os links abrem direitos.
+  if (!deptGuardado() && !jaPassouPelaEntrada()) return <Navigate to="/entrada" replace />
 
   return (
     <Shell>

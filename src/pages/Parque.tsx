@@ -4,9 +4,10 @@ import { useApp } from '../lib/appState'
 import { Loading, Modal, useToast } from '../components/ui'
 import { useLembrado } from '../lib/lembrar'
 import {
-  type Lugar, type Reserva,
-  HOTEIS_PARQUE, corDoHotel,
+  type Lugar, type Reserva, type TipoLugar,
+  HOTEIS_PARQUE, TIPOS, corDoHotel, tipoDoLugar,
   fetchLugares, fetchReservas, procurarReservas, guardarReserva, apagarReserva,
+  guardarTipoLugar,
   mensagemDeErro, somaDias, diffDias, hojeIso, diaSemana, diaMes, dataCurta, dataLonga,
   ocupaNoite,
 } from '../lib/parque'
@@ -35,7 +36,7 @@ type Linha =
 
 export default function Parque() {
   const toast = useToast()
-  const { email, canWrite } = useAuth()
+  const { email, canWrite, isAdmin } = useAuth()
   const { hotels } = useApp()
   const podeEscrever = canWrite('FO')
 
@@ -51,6 +52,8 @@ export default function Parque() {
 
   const [busca, setBusca] = useState('')
   const [resultados, setResultados] = useState<Reserva[]>([])
+  const [verLugares, setVerLugares] = useState(false)
+  const [aMudarTipo, setAMudarTipo] = useState<string | null>(null)
 
   const corpoRef = useRef<HTMLDivElement>(null)
 
@@ -96,17 +99,21 @@ export default function Parque() {
   }, [busca])
 
   /* ------------------------------- layout ------------------------------- */
+  // uma secção por tipo de lugar, na ordem de TIPOS; tipos sem lugares ativos
+  // não aparecem, para o parque de hoje não mostrar cabeçalhos vazios
   const linhas: Linha[] = useMemo(() => {
     const out: Linha[] = []
-    const carros = lugares.filter(l => l.tipo === 'carro' && l.ativo)
-    const motas = lugares.filter(l => l.tipo === 'mota' && l.ativo)
-    if (carros.length) {
-      out.push({ tipo: 'seccao', titulo: `Carros · ${carros.length} lugares` })
-      carros.forEach(lugar => out.push({ tipo: 'lugar', lugar }))
-    }
-    if (motas.length) {
-      out.push({ tipo: 'seccao', titulo: `Motas · ${motas.length} lugares` })
-      motas.forEach(lugar => out.push({ tipo: 'lugar', lugar }))
+    const ativos = lugares.filter(l => l.ativo)
+    const tipos = (Object.keys(TIPOS) as TipoLugar[])
+      .sort((a, b) => TIPOS[a].ordem - TIPOS[b].ordem)
+    for (const t of tipos) {
+      const doTipo = ativos.filter(l => l.tipo === t)
+      if (!doTipo.length) continue
+      out.push({
+        tipo: 'seccao',
+        titulo: `${TIPOS[t].seccao} · ${doTipo.length} ${doTipo.length === 1 ? 'lugar' : 'lugares'}`,
+      })
+      doTipo.forEach(lugar => out.push({ tipo: 'lugar', lugar }))
     }
     return out
   }, [lugares])
@@ -123,24 +130,51 @@ export default function Parque() {
     return i < 0 ? 0 : topos.tops[i]
   }
 
-  const totalCarros = lugares.filter(l => l.tipo === 'carro' && l.ativo).length
+  // o «x/16» do cabeçalho é de carros: o lugar elétrico também leva um carro,
+  // conta para o total; as motas ficam de fora porque não disputam o mesmo sítio
+  const lugaresDeCarro = useMemo(
+    () => new Set(lugares.filter(l => l.ativo && tipoDoLugar(l.tipo).carro).map(l => l.id)),
+    [lugares],
+  )
+  const totalCarros = lugaresDeCarro.size
 
   const ocupacaoPorDia = useMemo(() => {
     const m: Record<string, number> = {}
     for (const d of dias) {
       m[d] = new Set(
-        reservas.filter(r => r.space_id.startsWith('C') && ocupaNoite(r, d)).map(r => r.space_id),
+        reservas.filter(r => lugaresDeCarro.has(r.space_id) && ocupaNoite(r, d)).map(r => r.space_id),
       ).size
     }
     return m
-  }, [reservas, dias])
+  }, [reservas, dias, lugaresDeCarro])
 
   const visiveis = useMemo(
     () => reservas.filter(r => filtro === 'todos' || hotelPorId[r.hotel_id]?.slug === filtro),
     [reservas, filtro, hotelPorId],
   )
 
+  const reservasPorLugar = useMemo(() => {
+    const m: Record<string, number> = {}
+    for (const r of reservas) m[r.space_id] = (m[r.space_id] ?? 0) + 1
+    return m
+  }, [reservas])
+
   /* ------------------------------- ações -------------------------------- */
+  const mudarTipo = async (id: string, tipo: TipoLugar) => {
+    const antes = lugares
+    setAMudarTipo(id)
+    setLugares(ls => ls.map(l => (l.id === id ? { ...l, tipo } : l)))
+    try {
+      await guardarTipoLugar(id, tipo)
+      toast(`${id} passa a ${TIPOS[tipo].curto}`)
+    } catch (e) {
+      setLugares(antes)
+      toast(mensagemDeErro(e), 'erro')
+    } finally {
+      setAMudarTipo(null)
+    }
+  }
+
   const novaReserva = (spaceId: string, dia: string) => {
     if (!podeEscrever) return
     setRascunho({
@@ -318,6 +352,9 @@ export default function Parque() {
             <option value="todos">Todos os hotéis</option>
             {hoteisParque.map(h => <option key={h.id} value={h.slug}>{h.name}</option>)}
           </select>
+          {isAdmin && (
+            <button className="btn-ghost" onClick={() => setVerLugares(true)}>Lugares</button>
+          )}
         </div>
       </div>
 
@@ -364,6 +401,11 @@ export default function Parque() {
             {h.name}
           </span>
         ))}
+        {lugares.some(l => l.ativo && l.tipo === 'electrico') && (
+          <span className="flex items-center gap-1.5 text-slate-500">
+            <span className="text-emerald-600">⚡</span> lugar com carregador
+          </span>
+        )}
       </div>
 
       {/* grelha */}
@@ -413,8 +455,11 @@ export default function Parque() {
                        top, height: ALT_LINHA,
                        gridTemplateColumns: `${LARG_ROTULO}px repeat(${DIAS}, minmax(0,1fr))`,
                      }}>
-                  <div className="flex items-center border-r border-slate-200 px-2 text-sm font-medium">
+                  <div className="flex items-center gap-1 border-r border-slate-200 px-2 text-sm font-medium">
                     {l.lugar.id}
+                    {l.lugar.tipo === 'electrico' && (
+                      <span className="text-xs text-emerald-600" title="lugar com carregador">⚡</span>
+                    )}
                   </div>
                   {dias.map(d => (
                     <button key={d}
@@ -530,7 +575,7 @@ export default function Parque() {
                         onChange={e => setRascunho({ ...rascunho, space_id: e.target.value })}>
                   {lugares.filter(l => l.ativo).map(l => (
                     <option key={l.id} value={l.id}>
-                      {l.id} · {l.tipo === 'carro' ? 'carro' : 'mota'}
+                      {l.id} · {tipoDoLugar(l.tipo).curto}
                     </option>
                   ))}
                 </select>
@@ -619,6 +664,38 @@ export default function Parque() {
             </div>
           </div>
         )}
+      </Modal>
+
+      {/* tipos de lugar */}
+      <Modal open={verLugares} onClose={() => setVerLugares(false)} title="Lugares do parque">
+        <div className="space-y-3">
+          <p className="text-sm text-slate-500">
+            Se instalarem (ou tirarem) um carregador, muda-se aqui. As reservas
+            que já lá estão não se perdem — o lugar é o mesmo, só passa a estar
+            noutra secção da grelha.
+          </p>
+          <div className="max-h-[60vh] overflow-y-auto rounded-lg border border-slate-200">
+            {lugares.filter(l => l.ativo).map(l => (
+              <div key={l.id}
+                   className="flex items-center gap-3 border-b border-slate-100 px-3 py-2 last:border-0">
+                <span className="w-12 text-sm font-medium">{l.id}</span>
+                <span className="flex-1 text-xs text-slate-500">
+                  {reservasPorLugar[l.id] ?? 0} reserva(s) nos dias à vista
+                </span>
+                <select className="input w-auto !py-1.5 text-sm" value={l.tipo}
+                        disabled={aMudarTipo === l.id}
+                        onChange={e => mudarTipo(l.id, e.target.value as TipoLugar)}>
+                  {(Object.keys(TIPOS) as TipoLugar[]).map(t => (
+                    <option key={t} value={t}>{TIPOS[t].curto}</option>
+                  ))}
+                </select>
+              </div>
+            ))}
+          </div>
+          <div className="flex justify-end">
+            <button className="btn-ghost" onClick={() => setVerLugares(false)}>Fechar</button>
+          </div>
+        </div>
       </Modal>
     </div>
   )

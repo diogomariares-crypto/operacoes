@@ -1,8 +1,8 @@
 import { supabase } from './supabase'
 
 /**
- * Parque de estacionamento — 16 lugares de carro e 2 de mota, partilhados
- * pelos hotéis.
+ * Parque de estacionamento — 16 lugares de carro (quatro deles com carregador)
+ * e 2 de mota, partilhados pelos hotéis.
  *
  * Não há horas. Uma reserva ocupa noites: entra no dia de início e sai no dia
  * de fim, e o dia da saída fica livre para outro carro. Por isso o intervalo é
@@ -12,12 +12,32 @@ import { supabase } from './supabase'
  * no ecrã.
  */
 
+export type TipoLugar = 'carro' | 'electrico' | 'mota'
+
 export interface Lugar {
   id: string
-  tipo: 'carro' | 'mota'
+  tipo: TipoLugar
   ordem: number
   ativo: boolean
 }
+
+/**
+ * Os tipos de lugar, pela ordem em que aparecem na grelha.
+ *
+ * `carro: true` quer dizer que ali cabe um carro — é o que conta para o
+ * «12/16» do cabeçalho. Um lugar elétrico continua a ser um lugar de carro:
+ * o que muda é ter carregador, não o tamanho.
+ */
+export const TIPOS: Record<TipoLugar, {
+  seccao: string; curto: string; carro: boolean; ordem: number
+}> = {
+  carro:     { seccao: 'Carros',            curto: 'carro',    carro: true,  ordem: 1 },
+  electrico: { seccao: 'Carros elétricos',  curto: 'elétrico', carro: true,  ordem: 2 },
+  mota:      { seccao: 'Motas',             curto: 'mota',     carro: false, ordem: 3 },
+}
+
+/** Nunca devolve `undefined`, mesmo que a base de dados ganhe um tipo novo. */
+export const tipoDoLugar = (t: string) => TIPOS[t as TipoLugar] ?? TIPOS.carro
 
 export interface Reserva {
   id: string
@@ -87,6 +107,13 @@ export async function fetchLugares(): Promise<Lugar[]> {
     .from('parking_spaces').select('*').order('ordem')
   if (error) throw error
   return (data ?? []) as Lugar[]
+}
+
+/** Muda um lugar de tipo (só administradores, pela política da tabela). */
+export async function guardarTipoLugar(id: string, tipo: TipoLugar) {
+  const { error } = await supabase
+    .from('parking_spaces').update({ tipo }).eq('id', id)
+  if (error) throw error
 }
 
 /** Reservas que tocam a janela [de, ate). */

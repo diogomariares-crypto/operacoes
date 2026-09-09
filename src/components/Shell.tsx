@@ -56,16 +56,23 @@ export default function Shell({ children }: { children: ReactNode }) {
       <header ref={cabecalho} className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur">
         {/* linha 1: identidade, hotel, módulos, conta */}
         <div className="mx-auto flex max-w-7xl items-center gap-3 px-3 py-2.5 sm:px-5">
+          {/*
+            Voltar à entrada. Era só o logótipo, que é igual a um logótipo que
+            não faz nada — ninguém adivinha que se clica. Passa a ter seta,
+            moldura e o nome do departamento à vista, e há o mesmo caminho pelo
+            menu da conta para quem procura lá.
+          */}
           <button
             onClick={() => { esquecerDept(); nav('/entrada') }}
             title="Trocar de departamento"
-            className="flex shrink-0 items-center gap-2 rounded-lg py-1 pr-1 hover:bg-slate-50"
+            className="flex shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 py-1 pl-1 pr-2 hover:border-brand-200 hover:bg-brand-50/60"
           >
+            <span className="text-base leading-none text-slate-400">‹</span>
             <span className="grid h-8 w-8 place-items-center rounded-lg bg-brand-500 text-sm font-bold text-white">
               cb
             </span>
-            <span className="hidden text-sm font-semibold lg:block">
-              {dept ? dept.label : 'Operações'}
+            <span className="max-w-[28vw] truncate text-sm font-semibold sm:max-w-none">
+              {dept ? dept.label : 'Departamentos'}
             </span>
           </button>
 
@@ -120,6 +127,13 @@ export default function Shell({ children }: { children: ReactNode }) {
                     </div>
                   </div>
                   <div className="my-1 border-t border-slate-100" />
+                  <button
+                    onClick={() => { setMenu(false); esquecerDept(); nav('/entrada') }}
+                    className="block w-full rounded-lg px-2 py-1.5 text-left text-sm text-slate-700 hover:bg-slate-100"
+                  >
+                    Trocar de departamento
+                    {dept && <span className="text-slate-400"> · {dept.label}</span>}
+                  </button>
                   <button
                     onClick={() => { setMenu(false); nav('/conta') }}
                     className="block w-full rounded-lg px-2 py-1.5 text-left text-sm text-slate-700 hover:bg-slate-100"

@@ -1,6 +1,9 @@
+import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
-import { DEPARTAMENTOS, guardarDept, modulosDoDept } from '../lib/departamentos'
+import {
+  DEPARTAMENTOS, guardarDept, marcarEntradaVista, modulosDoDept,
+} from '../lib/departamentos'
 
 /**
  * A entrada da app: um cartão por departamento.
@@ -16,6 +19,9 @@ import { DEPARTAMENTOS, guardarDept, modulosDoDept } from '../lib/departamentos'
 export default function Entrada() {
   const nav = useNavigate()
   const { fullName, email, podeVerModulo, podeVerPagina, loading } = useAuth()
+
+  // Vista uma vez, não volta a interromper quem só quer abrir um link.
+  useEffect(marcarEntradaVista, [])
 
   const cartoes = DEPARTAMENTOS.map(d => {
     const modulos = modulosDoDept(d).filter(podeVerModulo)
