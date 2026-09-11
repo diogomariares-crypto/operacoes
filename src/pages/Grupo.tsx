@@ -17,8 +17,8 @@ import {
  * A ficha de um grupo — o que era o Tour Movement em Word.
  *
  * A ordem é a do documento, para quem já o conhece não ter de reaprender:
- * resumo, quartos por noite, quem paga o quê, VIPs, notas por departamento e
- * rooming list.
+ * resumo, contactos, quartos por noite, quem paga o quê, VIPs, notas (gerais e
+ * depois por departamento) e rooming list.
  *
  * Quem escreve o quê não é igual em toda a página: as datas, os quartos e as
  * tarifas são de quem trata dos grupos (receção e direção); a nota de cada
@@ -236,6 +236,7 @@ export default function GrupoFicha() {
             <button className="btn-ghost" onClick={() => setEditar({
               nome: grupo.nome, codigo: grupo.codigo, organizador: grupo.organizador,
               tour_leader: grupo.tour_leader, telefone: grupo.telefone, email: grupo.email,
+              lider_telefone: grupo.lider_telefone, lider_email: grupo.lider_email,
               chegada: grupo.chegada, saida: grupo.saida,
               hora_chegada: grupo.hora_chegada, hora_saida: grupo.hora_saida,
             })}>
@@ -261,24 +262,28 @@ export default function GrupoFicha() {
                nota={t.valor ? `${euros(t.valor)} em alojamento` : 'sem tarifas lançadas'} />
       </div>
 
-      {/* contactos */}
-      {(grupo.tour_leader || grupo.telefone || grupo.email) && (
-        <div className="card flex flex-wrap gap-x-8 gap-y-2 p-4 text-sm">
-          {grupo.tour_leader && (
-            <div><span className="text-slate-500">Tour leader: </span>{grupo.tour_leader}</div>
-          )}
-          {grupo.telefone && (
-            <div><span className="text-slate-500">Tel.: </span>
-              <a className="text-brand-700 hover:underline" href={`tel:${grupo.telefone}`}>{grupo.telefone}</a>
-            </div>
-          )}
-          {grupo.email && (
-            <div><span className="text-slate-500">Email: </span>
-              <a className="text-brand-700 hover:underline" href={`mailto:${grupo.email}`}>{grupo.email}</a>
-            </div>
-          )}
-        </div>
-      )}
+      {/*
+        Dois contactos porque são duas pessoas: a agência que contratou (para
+        faturação e alterações) e quem vem com o grupo (a quem a receção liga
+        às 23h). Aparecem sempre, mesmo em branco, senão ninguém se lembra de
+        os preencher.
+      */}
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Contacto
+          titulo="Responsável do grupo"
+          sub="o ponto de contacto, vem com o grupo"
+          nome={grupo.tour_leader}
+          telefone={grupo.lider_telefone}
+          email={grupo.lider_email}
+        />
+        <Contacto
+          titulo="Organizador"
+          sub="quem contratou o grupo"
+          nome={grupo.organizador}
+          telefone={grupo.telefone}
+          email={grupo.email}
+        />
+      </div>
 
       {/* quartos por noite */}
       <section className="space-y-2">
@@ -484,8 +489,29 @@ export default function GrupoFicha() {
         </div>
       </section>
 
-      {/* notas por departamento */}
-      <section className="space-y-2">
+      {/* notas */}
+      <section className="space-y-3">
+        <div>
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold">Notas gerais</h2>
+            {!canWrite('FO') && (
+              <span className="text-[11px] text-slate-400">escreve a receção</span>
+            )}
+          </div>
+          <div className="card p-4">
+            <Texto valor={notaDe('GERAL')?.texto ?? ''} editavel={canWrite('FO')} linhas={4}
+                   placeholder={canWrite('FO')
+                     ? 'O que toda a casa precisa de saber sobre este grupo'
+                     : '—'}
+                   aoGravar={v => gravarNotaDe('GERAL', v)} />
+            {notaDe('GERAL')?.atualizado_por && (
+              <p className="mt-1.5 text-[11px] text-slate-400">
+                última alteração: {notaDe('GERAL')!.atualizado_por}
+              </p>
+            )}
+          </div>
+        </div>
+
         <h2 className="text-sm font-semibold">Notas por departamento</h2>
         <div className="grid gap-3 lg:grid-cols-2">
           {SECCOES.map(s => {
@@ -575,14 +601,34 @@ export default function GrupoFicha() {
                      ao={v => setEditar({ ...editar, nome: v })} />
               <Campo rotulo="Código" valor={editar.codigo ?? ''}
                      ao={v => setEditar({ ...editar, codigo: v || null })} />
-              <Campo rotulo="Organizador" valor={editar.organizador ?? ''}
-                     ao={v => setEditar({ ...editar, organizador: v || null })} />
-              <Campo rotulo="Tour leader" valor={editar.tour_leader ?? ''}
-                     ao={v => setEditar({ ...editar, tour_leader: v || null })} />
-              <Campo rotulo="Telefone" valor={editar.telefone ?? ''}
-                     ao={v => setEditar({ ...editar, telefone: v || null })} />
-              <Campo rotulo="Email" valor={editar.email ?? ''}
-                     ao={v => setEditar({ ...editar, email: v || null })} />
+            </div>
+
+            <div className="rounded-lg border border-slate-200 p-3">
+              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Responsável do grupo · ponto de contacto
+              </div>
+              <div className="grid gap-3 sm:grid-cols-3">
+                <Campo rotulo="Nome" valor={editar.tour_leader ?? ''}
+                       ao={v => setEditar({ ...editar, tour_leader: v || null })} />
+                <Campo rotulo="Telefone" valor={editar.lider_telefone ?? ''}
+                       ao={v => setEditar({ ...editar, lider_telefone: v || null })} />
+                <Campo rotulo="Email" valor={editar.lider_email ?? ''}
+                       ao={v => setEditar({ ...editar, lider_email: v || null })} />
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-slate-200 p-3">
+              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Organizador · quem contratou
+              </div>
+              <div className="grid gap-3 sm:grid-cols-3">
+                <Campo rotulo="Nome ou empresa" valor={editar.organizador ?? ''}
+                       ao={v => setEditar({ ...editar, organizador: v || null })} />
+                <Campo rotulo="Telefone" valor={editar.telefone ?? ''}
+                       ao={v => setEditar({ ...editar, telefone: v || null })} />
+                <Campo rotulo="Email" valor={editar.email ?? ''}
+                       ao={v => setEditar({ ...editar, email: v || null })} />
+              </div>
             </div>
 
             <div className="grid gap-3 sm:grid-cols-2">
@@ -672,6 +718,41 @@ function Bloco({ titulo, valor, nota }: { titulo: string; valor: string; nota: s
       <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{titulo}</div>
       <div className="mt-0.5 text-lg font-semibold">{valor}</div>
       <div className="text-xs text-slate-500">{nota}</div>
+    </div>
+  )
+}
+
+/** Um contacto: nome, telefone e email, com o telefone e o email clicáveis. */
+function Contacto({
+  titulo, sub, nome, telefone, email,
+}: {
+  titulo: string; sub: string
+  nome: string | null; telefone: string | null; email: string | null
+}) {
+  const vazio = !nome && !telefone && !email
+  return (
+    <div className="card p-4">
+      <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+        {titulo}
+      </div>
+      {vazio ? (
+        <p className="mt-1 text-sm text-slate-400">
+          sem contacto — preenche em «Editar»
+        </p>
+      ) : (
+        <>
+          <div className="mt-0.5 text-sm font-semibold">{nome ?? 'sem nome'}</div>
+          <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-sm">
+            {telefone && (
+              <a className="text-brand-700 hover:underline" href={`tel:${telefone}`}>{telefone}</a>
+            )}
+            {email && (
+              <a className="truncate text-brand-700 hover:underline" href={`mailto:${email}`}>{email}</a>
+            )}
+          </div>
+        </>
+      )}
+      <div className="mt-1 text-xs text-slate-500">{sub}</div>
     </div>
   )
 }

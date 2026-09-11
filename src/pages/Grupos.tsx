@@ -63,6 +63,8 @@ export default function Grupos() {
       tour_leader: null,
       telefone: null,
       email: null,
+      lider_telefone: null,
+      lider_email: null,
       chegada: hoje,
       saida: somaDias(hoje, 1),
       hora_chegada: null,

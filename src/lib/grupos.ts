@@ -15,8 +15,13 @@ import { supabase } from './supabase'
 
 export type Estado = 'previsto' | 'confirmado' | 'cancelado'
 export type QuemPaga = 'empresa' | 'individual' | 'misto'
-/** 'DEP' é o depósito e 'MAN' a manutenção — secções do documento, não papéis. */
-export type DeptNota = 'FO' | 'DEP' | 'MAN' | 'HSK' | 'FB'
+/**
+ * As secções de notas. 'GERAL' é o que serve a toda a casa e 'MAN' a
+ * manutenção, que não tem papel próprio e fica com quem trata da receção.
+ * O depósito não está aqui: vive na caixa do pagamento, ao lado de quem paga
+ * o quê, e um dado com duas moradas acaba sempre com duas versões.
+ */
+export type DeptNota = 'GERAL' | 'FO' | 'MAN' | 'HSK' | 'FB'
 
 export interface Grupo {
   id: string
@@ -27,6 +32,9 @@ export interface Grupo {
   tour_leader: string | null
   telefone: string | null
   email: string | null
+  /** O responsável que vem com o grupo, e o contacto dele. */
+  lider_telefone: string | null
+  lider_email: string | null
   chegada: string
   saida: string
   hora_chegada: string | null
@@ -86,10 +94,9 @@ export interface QuartoGrupo {
 
 export type GrupoNovo = Omit<Grupo, 'id' | 'updated_at' | 'atualizado_por'>
 
-/** As secções de notas, na ordem do documento. */
+/** As notas por departamento, na ordem do documento. A geral está à parte. */
 export const SECCOES: { id: DeptNota; label: string; quem: string }[] = [
   { id: 'FO', label: 'Front Office', quem: 'receção' },
-  { id: 'DEP', label: 'Depósito', quem: 'receção' },
   { id: 'MAN', label: 'Manutenção', quem: 'receção' },
   { id: 'HSK', label: 'Housekeeping', quem: 'housekeeping' },
   { id: 'FB', label: 'F&B', quem: 'F&B' },
