@@ -7,6 +7,8 @@ import Shell from './components/Shell'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Entrada from './pages/Entrada'
+import Grupos from './pages/Grupos'
+import GrupoFicha from './pages/Grupo'
 import Contagem from './pages/Contagem'
 import Encomendas from './pages/Encomendas'
 import Historico from './pages/Historico'
@@ -117,6 +119,8 @@ function Interior() {
         <Route path="/turno" element={<Turno />} />
         <Route path="/turno/:date" element={<Turno />} />
         <Route path="/turno-historico" element={<TurnoHistorico />} />
+        <Route path="/grupos" element={<Grupos />} />
+        <Route path="/grupos/:id" element={<GrupoFicha />} />
         <Route path="/parque" element={<Parque />} />
         <Route path="/fb" element={<FbFaturacao />} />
         <Route path="/fb-painel" element={<SoPainel><FbDashboard /></SoPainel>} />

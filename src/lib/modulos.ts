@@ -68,6 +68,14 @@ export const MODULOS: Modulo[] = [
     ],
   },
   {
+    id: 'grupos',
+    label: 'Grupos',
+    icone: '⚑',
+    paginas: [
+      { to: '/grupos', label: 'Grupos' },
+    ],
+  },
+  {
     id: 'parque',
     label: 'Parque',
     icone: '⬓',
