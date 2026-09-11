@@ -43,17 +43,29 @@ export interface Grupo {
   atualizado_por: string | null
 }
 
-export interface Dia {
+/**
+ * Uma linha de quartos numa noite: tantos quartos de tal tipologia, a tal
+ * preço.
+ *
+ * Três colunas fixas (single/double/twin) davam a tabela do documento, mas não
+ * chegam: há noites com tipologias diferentes ao mesmo tempo, triplos, e o
+ * mesmo tipo vendido a preços diferentes na mesma noite. Com linhas, o caso
+ * simples é uma linha por noite e o complicado cabe sem truques.
+ */
+export interface Linha {
+  id: string
   grupo_id: string
   data: string
+  tipologia: string
+  quartos: number
+  tarifa: number | null
+  /** Pessoas nesta linha. Vazio significa «o que a tipologia leva». */
   pax: number | null
-  s_quartos: number
-  s_tarifa: number | null
-  d_quartos: number
-  d_tarifa: number | null
-  t_quartos: number
-  t_tarifa: number | null
+  nota: string | null
+  ordem: number
 }
+
+export type LinhaNova = Omit<Linha, 'id'>
 
 export interface Nota {
   grupo_id: string
@@ -83,11 +95,38 @@ export const SECCOES: { id: DeptNota; label: string; quem: string }[] = [
   { id: 'FB', label: 'F&B', quem: 'F&B' },
 ]
 
-export const TIPOS_QUARTO = [
-  { id: 's' as const, label: 'Single' },
-  { id: 'd' as const, label: 'Double' },
-  { id: 't' as const, label: 'Twin' },
+/**
+ * Tipologias conhecidas, com quantas pessoas levam.
+ *
+ * A lista serve de sugestão e de valor por omissão do PAX — não é uma prisão:
+ * a tipologia é texto, por isso um «Duplex» ou um «Quarto do tour leader»
+ * entram sem esperar por mim. O que não estiver aqui fica sem capacidade
+ * conhecida e obriga a escrever o PAX à mão, que é melhor do que inventar.
+ */
+export const TIPOLOGIAS: { id: string; label: string; pax: number }[] = [
+  { id: 'single', label: 'Single', pax: 1 },
+  { id: 'double', label: 'Double', pax: 2 },
+  { id: 'twin', label: 'Twin', pax: 2 },
+  { id: 'triplo', label: 'Triplo', pax: 3 },
+  { id: 'quadruplo', label: 'Quádruplo', pax: 4 },
+  { id: 'familiar', label: 'Familiar', pax: 4 },
+  { id: 'suite', label: 'Suite', pax: 2 },
 ]
+
+/**
+ * Como a tipologia é escrita à mão, a comparação ignora maiúsculas e acentos:
+ * «Triplo», «triplo» e «TRIPLO» são a mesma coisa e todas levam três pessoas.
+ */
+const simples = (s: string) =>
+  s.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+
+const conhecida = (t: string) =>
+  TIPOLOGIAS.find(x => simples(x.id) === simples(t) || simples(x.label) === simples(t))
+
+export const tipologiaLabel = (t: string) => conhecida(t)?.label ?? t
+
+/** Quantas pessoas leva a tipologia, ou null se não a conhecemos. */
+export const paxDaTipologia = (t: string) => conhecida(t)?.pax ?? null
 
 export const ESTADOS: { id: Estado; label: string; tom: string }[] = [
   { id: 'previsto', label: 'Previsto', tom: 'bg-amber-100 text-amber-800' },
@@ -144,12 +183,47 @@ export const diasDoGrupo = (chegada: string, saida: string) => {
 }
 
 /* ------------------------------- contas ------------------------------- */
-export const quartosDoDia = (d: Dia) => d.s_quartos + d.d_quartos + d.t_quartos
+export const valorDaLinha = (l: Linha) => l.quartos * (l.tarifa ?? 0)
 
-export const valorDoDia = (d: Dia) =>
-  d.s_quartos * (d.s_tarifa ?? 0) +
-  d.d_quartos * (d.d_tarifa ?? 0) +
-  d.t_quartos * (d.t_tarifa ?? 0)
+/** Pessoas numa linha: o que lá está escrito, ou o que a tipologia leva. */
+export const paxDaLinha = (l: Linha) => {
+  if (l.pax != null) return l.pax
+  const cap = paxDaTipologia(l.tipologia)
+  return cap == null ? null : l.quartos * cap
+}
+
+export interface Noite {
+  data: string
+  linhas: Linha[]
+  quartos: number
+  pax: number | null
+  valor: number
+}
+
+/**
+ * As noites do grupo com as suas linhas.
+ *
+ * As noites vêm sempre das datas do grupo e não da tabela: uma noite sem
+ * linhas nenhumas tem de aparecer vazia, para se ver que falta preencher em
+ * vez de desaparecer do quadro.
+ */
+export function noitesDoGrupo(grupo: Grupo, linhas: Linha[]): Noite[] {
+  return diasDoGrupo(grupo.chegada, grupo.saida).map(data => {
+    const doDia = linhas.filter(l => l.data === data)
+    const paxes = doDia.map(paxDaLinha)
+    return {
+      data,
+      linhas: doDia,
+      quartos: doDia.reduce((s, l) => s + l.quartos, 0),
+      // se alguma linha tem tipologia desconhecida e PAX em branco, o total da
+      // noite fica desconhecido em vez de mentir por defeito
+      pax: doDia.length === 0 || paxes.some(p => p == null)
+        ? null
+        : paxes.reduce<number>((s, p) => s + (p ?? 0), 0),
+      valor: doDia.reduce((s, l) => s + valorDaLinha(l), 0),
+    }
+  })
+}
 
 export interface Totais {
   noites: number
@@ -157,17 +231,37 @@ export interface Totais {
   quartosMax: number
   paxMax: number
   valor: number
+  /** Noites do grupo que ainda não têm nenhuma linha lançada. */
+  vazias: number
 }
 
-export function totais(dias: Dia[]): Totais {
+export function totais(noites: Noite[]): Totais {
   return {
-    noites: dias.length,
-    quartosNoite: dias.reduce((s, d) => s + quartosDoDia(d), 0),
-    quartosMax: dias.reduce((m, d) => Math.max(m, quartosDoDia(d)), 0),
-    paxMax: dias.reduce((m, d) => Math.max(m, d.pax ?? 0), 0),
-    valor: dias.reduce((s, d) => s + valorDoDia(d), 0),
+    noites: noites.length,
+    quartosNoite: noites.reduce((s, n) => s + n.quartos, 0),
+    quartosMax: noites.reduce((m, n) => Math.max(m, n.quartos), 0),
+    paxMax: noites.reduce((m, n) => Math.max(m, n.pax ?? 0), 0),
+    valor: noites.reduce((s, n) => s + n.valor, 0),
+    vazias: noites.filter(n => n.linhas.length === 0).length,
   }
 }
+
+/** As tipologias que o grupo usa, para o resumo dizer «10 single, 2 triplo». */
+export function composicao(noites: Noite[]) {
+  const m = new Map<string, number>()
+  for (const n of noites) {
+    for (const l of n.linhas) {
+      // o máximo em qualquer noite, não a soma: é a pergunta da governanta
+      m.set(l.tipologia, Math.max(m.get(l.tipologia) ?? 0, quartosDaTipologiaNaNoite(n, l.tipologia)))
+    }
+  }
+  return [...m.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([tipologia, quartos]) => ({ tipologia, quartos }))
+}
+
+const quartosDaTipologiaNaNoite = (n: Noite, tipologia: string) =>
+  n.linhas.filter(l => l.tipologia === tipologia).reduce((s, l) => s + l.quartos, 0)
 
 /* ------------------------------- dados ------------------------------- */
 export async function fetchGrupos(hotelId: string, desde?: string): Promise<Grupo[]> {
@@ -184,11 +278,12 @@ export async function fetchGrupo(id: string): Promise<Grupo | null> {
   return (data as Grupo) ?? null
 }
 
-export async function fetchDias(grupoId: string): Promise<Dia[]> {
+export async function fetchLinhas(grupoId: string): Promise<Linha[]> {
   const { data, error } = await supabase
-    .from('grupo_dias').select('*').eq('grupo_id', grupoId).order('data')
+    .from('grupo_linhas').select('*').eq('grupo_id', grupoId)
+    .order('data').order('ordem')
   if (error) throw error
-  return (data ?? []) as Dia[]
+  return (data ?? []) as Linha[]
 }
 
 export async function fetchNotas(grupoId: string): Promise<Nota[]> {
@@ -225,46 +320,71 @@ export async function apagarGrupo(id: string) {
   if (error) throw error
 }
 
-/** Grava um dia. A chave é (grupo, data), por isso repetir não duplica. */
-export async function guardarDia(d: Dia) {
-  const { error } = await supabase
-    .from('grupo_dias').upsert(d, { onConflict: 'grupo_id,data' })
+export async function criarLinha(l: LinhaNova): Promise<Linha> {
+  const { data, error } = await supabase
+    .from('grupo_linhas').insert(l).select('*').single()
+  if (error) throw error
+  return data as Linha
+}
+
+export async function guardarLinha(id: string, patch: Partial<LinhaNova>) {
+  const { error } = await supabase.from('grupo_linhas').update(patch).eq('id', id)
+  if (error) throw error
+}
+
+export async function apagarLinha(id: string) {
+  const { error } = await supabase.from('grupo_linhas').delete().eq('id', id)
   if (error) throw error
 }
 
 /**
- * Põe os dias em linha com as datas do grupo: cria os que faltam e apaga os
- * que ficaram fora do intervalo depois de a estadia encurtar.
+ * Copia a composição de uma noite para as outras noites do grupo.
  *
- * Os novos herdam quartos, tarifas e PAX do último dia conhecido — prolongar
- * uma estadia por uma noite quase nunca muda a composição, e escrever quinze
- * singles outra vez à mão é onde se enganam os números.
+ * Quase todos os grupos repetem a mesma composição todas as noites; preencher
+ * cinco vezes à mão é trabalho e é onde os números se estragam. As noites de
+ * destino são substituídas — «copiar» que deixasse o que já lá estava dava
+ * quartos a dobrar.
  */
-export async function alinharDias(grupo: Grupo, dias: Dia[]) {
-  const querem = diasDoGrupo(grupo.chegada, grupo.saida)
-  const tem = new Set(dias.map(d => d.data))
-  const sobra = dias.filter(d => !querem.includes(d.data)).map(d => d.data)
-  const molde = dias[dias.length - 1]
+export async function copiarNoite(grupo: Grupo, linhas: Linha[], origem: string) {
+  const molde = linhas.filter(l => l.data === origem)
+  if (!molde.length) throw new Error('Essa noite não tem nada para copiar')
 
-  const novos = querem.filter(d => !tem.has(d)).map(data => ({
+  const destinos = diasDoGrupo(grupo.chegada, grupo.saida).filter(d => d !== origem)
+  if (!destinos.length) return 0
+
+  const { error: e1 } = await supabase
+    .from('grupo_linhas').delete().eq('grupo_id', grupo.id).in('data', destinos)
+  if (e1) throw e1
+
+  const novas = destinos.flatMap(data => molde.map(l => ({
     grupo_id: grupo.id,
     data,
-    pax: molde?.pax ?? null,
-    s_quartos: molde?.s_quartos ?? 0, s_tarifa: molde?.s_tarifa ?? null,
-    d_quartos: molde?.d_quartos ?? 0, d_tarifa: molde?.d_tarifa ?? null,
-    t_quartos: molde?.t_quartos ?? 0, t_tarifa: molde?.t_tarifa ?? null,
-  }))
+    tipologia: l.tipologia,
+    quartos: l.quartos,
+    tarifa: l.tarifa,
+    pax: l.pax,
+    nota: l.nota,
+    ordem: l.ordem,
+  })))
+  const { error: e2 } = await supabase.from('grupo_linhas').insert(novas)
+  if (e2) throw e2
+  return destinos.length
+}
 
-  if (novos.length) {
-    const { error } = await supabase.from('grupo_dias').insert(novos)
-    if (error) throw error
-  }
-  if (sobra.length) {
-    const { error } = await supabase
-      .from('grupo_dias').delete().eq('grupo_id', grupo.id).in('data', sobra)
-    if (error) throw error
-  }
-  return novos.length + sobra.length > 0
+/**
+ * Apaga as linhas que ficaram fora das datas depois de a estadia encurtar.
+ *
+ * Ao contrário dos quartos por dia de antes, não se criam linhas
+ * automaticamente: uma noite nova aparece vazia e o quadro diz que falta
+ * preencher, em vez de herdar números que ninguém confirmou.
+ */
+export async function limparLinhasFora(grupo: Grupo, linhas: Linha[]) {
+  const querem = new Set(diasDoGrupo(grupo.chegada, grupo.saida))
+  const fora = linhas.filter(l => !querem.has(l.data)).map(l => l.id)
+  if (!fora.length) return false
+  const { error } = await supabase.from('grupo_linhas').delete().in('id', fora)
+  if (error) throw error
+  return true
 }
 
 export async function guardarNota(

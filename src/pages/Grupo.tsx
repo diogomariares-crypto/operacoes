@@ -3,20 +3,21 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
 import { Loading, Modal, NumInput, useToast } from '../components/ui'
 import {
-  type Dia, type DeptNota, type Estado, type Grupo, type GrupoNovo, type Nota,
-  type QuartoGrupo, type QuemPaga,
-  ESTADOS, PAGAMENTOS, SECCOES,
-  alinharDias, apagarGrupo, apagarQuarto, dataCurta, dataLonga, diaSemana, euros,
-  fetchDias, fetchGrupo, fetchNotas, fetchQuartos, guardarDia, guardarGrupo,
-  guardarNota, lerRooming, mensagemDeErro, noites, quartosDoDia, somaDias,
-  substituirQuartos, totais, valorDoDia,
+  type DeptNota, type Estado, type Grupo, type GrupoNovo, type Linha,
+  type Nota, type QuartoGrupo, type QuemPaga,
+  ESTADOS, PAGAMENTOS, SECCOES, TIPOLOGIAS,
+  apagarGrupo, apagarLinha, apagarQuarto, composicao, copiarNoite, criarLinha,
+  dataCurta, dataLonga, diaSemana, euros, fetchGrupo, fetchLinhas, fetchNotas,
+  fetchQuartos, guardarGrupo, guardarLinha, guardarNota, lerRooming,
+  limparLinhasFora, mensagemDeErro, noites, noitesDoGrupo, paxDaLinha,
+  paxDaTipologia, somaDias, substituirQuartos, tipologiaLabel, totais, valorDaLinha,
 } from '../lib/grupos'
 
 /**
  * A ficha de um grupo — o que era o Tour Movement em Word.
  *
  * A ordem é a do documento, para quem já o conhece não ter de reaprender:
- * resumo, quartos por dia, quem paga o quê, VIPs, notas por departamento e
+ * resumo, quartos por noite, quem paga o quê, VIPs, notas por departamento e
  * rooming list.
  *
  * Quem escreve o quê não é igual em toda a página: as datas, os quartos e as
@@ -32,7 +33,7 @@ export default function GrupoFicha() {
   const podeEscrever = canWrite('FO')
 
   const [grupo, setGrupo] = useState<Grupo | null>(null)
-  const [dias, setDias] = useState<Dia[]>([])
+  const [linhas, setLinhas] = useState<Linha[]>([])
   const [notas, setNotas] = useState<Nota[]>([])
   const [quartos, setQuartos] = useState<QuartoGrupo[]>([])
   const [loading, setLoading] = useState(true)
@@ -46,12 +47,12 @@ export default function GrupoFicha() {
       const g = await fetchGrupo(id)
       setGrupo(g)
       if (!g) return
-      // os dias podem estar desalinhados se alguém mudou as datas noutro sítio
-      const ds = await fetchDias(id)
-      if (await alinharDias(g, ds).catch(() => false)) {
-        setDias(await fetchDias(id))
+      // pode ter sobrado alguma linha fora das datas se alguém as encurtou
+      const ls = await fetchLinhas(id)
+      if (await limparLinhasFora(g, ls).catch(() => false)) {
+        setLinhas(await fetchLinhas(id))
       } else {
-        setDias(ds)
+        setLinhas(ls)
       }
       setNotas(await fetchNotas(id))
       setQuartos(await fetchQuartos(id))
@@ -64,16 +65,62 @@ export default function GrupoFicha() {
 
   useEffect(() => { carregar() }, [id])
 
-  const t = useMemo(() => totais(dias), [dias])
+  const noitesG = useMemo(
+    () => (grupo ? noitesDoGrupo(grupo, linhas) : []),
+    [grupo, linhas],
+  )
+  const t = useMemo(() => totais(noitesG), [noitesG])
+  const comp = useMemo(() => composicao(noitesG), [noitesG])
 
   /* ------------------------------- ações ------------------------------- */
-  const mudarDia = (data: string, patch: Partial<Dia>) =>
-    setDias(ds => ds.map(d => (d.data === data ? { ...d, ...patch } : d)))
+  const mudarLinha = (id: string, patch: Partial<Linha>) =>
+    setLinhas(ls => ls.map(l => (l.id === id ? { ...l, ...patch } : l)))
 
-  const gravarDia = async (data: string) => {
-    const d = dias.find(x => x.data === data)
-    if (!d || !podeEscrever) return
-    try { await guardarDia(d) } catch (e) { toast(mensagemDeErro(e), 'erro') }
+  const gravarLinhaAgora = async (id: string, patch: Partial<Linha>) => {
+    if (!podeEscrever) return
+    mudarLinha(id, patch)
+    try { await guardarLinha(id, patch) } catch (e) { toast(mensagemDeErro(e), 'erro') }
+  }
+
+  const juntarLinha = async (data: string, molde?: Linha) => {
+    if (!grupo || !podeEscrever) return
+    const doDia = linhas.filter(l => l.data === data)
+    try {
+      const nova = await criarLinha({
+        grupo_id: grupo.id,
+        data,
+        tipologia: molde?.tipologia ?? 'single',
+        quartos: molde?.quartos ?? 1,
+        tarifa: molde?.tarifa ?? null,
+        pax: null,
+        nota: null,
+        ordem: doDia.length,
+      })
+      setLinhas(ls => [...ls, nova])
+    } catch (e) { toast(mensagemDeErro(e), 'erro') }
+  }
+
+  const tirarLinha = async (id: string) => {
+    if (!podeEscrever) return
+    try {
+      await apagarLinha(id)
+      setLinhas(ls => ls.filter(l => l.id !== id))
+    } catch (e) { toast(mensagemDeErro(e), 'erro') }
+  }
+
+  const repetirNoite = async (data: string) => {
+    if (!grupo || !podeEscrever) return
+    const outras = t.noites - 1
+    if (outras < 1) return
+    if (!confirm(
+      `Copiar a composição de ${dataCurta(data)} para as outras ${outras} noite(s)? ` +
+      'O que estiver lançado nessas noites é substituído.',
+    )) return
+    try {
+      await copiarNoite(grupo, linhas, data)
+      setLinhas(await fetchLinhas(grupo.id))
+      toast(`Composição de ${dataCurta(data)} aplicada a ${outras} noite(s)`)
+    } catch (e) { toast(mensagemDeErro(e), 'erro') }
   }
 
   const gravarCampo = async (patch: Partial<GrupoNovo>) => {
@@ -207,7 +254,9 @@ export default function GrupoFicha() {
                valor={`${diaSemana(grupo.saida)}, ${dataCurta(grupo.saida)}`}
                nota={grupo.hora_saida ? `às ${grupo.hora_saida}` : 'hora não definida'} />
         <Bloco titulo="Quartos" valor={t.quartosMax ? String(t.quartosMax) : '—'}
-               nota={`${t.noites} noite(s) · ${t.quartosNoite} quarto-noite(s)`} />
+               nota={comp.length
+                 ? comp.map(c => `${c.quartos} ${tipologiaLabel(c.tipologia).toLowerCase()}`).join(' · ')
+                 : `${t.noites} noite(s) por preencher`} />
         <Bloco titulo="Pax" valor={t.paxMax ? String(t.paxMax) : '—'}
                nota={t.valor ? `${euros(t.valor)} em alojamento` : 'sem tarifas lançadas'} />
       </div>
@@ -231,68 +280,157 @@ export default function GrupoFicha() {
         </div>
       )}
 
-      {/* quartos por dia */}
+      {/* quartos por noite */}
       <section className="space-y-2">
-        <h2 className="text-sm font-semibold">Quartos por dia</h2>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold">Quartos por noite</h2>
+          {t.vazias > 0 && (
+            <span className="chip bg-amber-100 text-amber-800">
+              {t.vazias} noite(s) por preencher
+            </span>
+          )}
+        </div>
         <div className="card overflow-x-auto">
-          <table className="w-full min-w-[680px]">
+          <table className="w-full min-w-[720px]">
             <thead className="border-b border-slate-200 bg-slate-50">
               <tr>
-                <th className="th">Dia</th>
-                <th className="th text-right">Single</th>
-                <th className="th text-right">€</th>
-                <th className="th text-right">Double</th>
-                <th className="th text-right">€</th>
-                <th className="th text-right">Twin</th>
-                <th className="th text-right">€</th>
-                <th className="th text-right">Pax</th>
+                <th className="th">Tipologia</th>
                 <th className="th text-right">Quartos</th>
+                <th className="th text-right">Tarifa</th>
+                <th className="th text-right">Pax</th>
                 <th className="th text-right">Valor</th>
+                <th className="th" />
               </tr>
             </thead>
-            <tbody>
-              {dias.map(d => (
-                <tr key={d.data} className="border-b border-slate-100 last:border-0">
-                  <td className="td whitespace-nowrap">
-                    <span className="font-medium">{dataCurta(d.data)}</span>
-                    <span className="ml-1.5 text-xs text-slate-400">{diaSemana(d.data)}</span>
+            {noitesG.map(n => (
+              <tbody key={n.data}>
+                {/* a noite como cabeçalho: é por noite que se lê o quadro */}
+                <tr className="border-y border-slate-200 bg-slate-50/80">
+                  <td className="td" colSpan={2}>
+                    <span className="font-semibold">{dataCurta(n.data)}</span>
+                    <span className="ml-1.5 text-xs text-slate-500">{diaSemana(n.data)}</span>
                   </td>
-                  {(['s', 'd', 't'] as const).map(k => (
-                    <Celulas key={k} dia={d} tipo={k} editavel={podeEscrever}
-                             mudar={mudarDia} gravar={gravarDia} />
-                  ))}
-                  <td className="td w-20">
-                    <NumInput value={d.pax ?? 0} disabled={!podeEscrever}
-                              onChange={n => mudarDia(d.data, { pax: n || null })}
-                              onBlur={() => gravarDia(d.data)} />
+                  <td className="td text-right text-xs tabular-nums text-slate-500">
+                    {n.quartos} quarto(s)
                   </td>
-                  <td className="td text-right tabular-nums font-medium">{quartosDoDia(d)}</td>
-                  <td className="td text-right tabular-nums">{euros(valorDoDia(d))}</td>
+                  <td className="td text-right text-xs tabular-nums text-slate-500">
+                    {n.pax == null ? '—' : `${n.pax} pax`}
+                  </td>
+                  <td className="td text-right text-xs tabular-nums text-slate-500">
+                    {n.valor ? euros(n.valor) : '—'}
+                  </td>
+                  <td className="td whitespace-nowrap text-right">
+                    {podeEscrever && (
+                      <>
+                        <button className="text-xs text-brand-700 hover:underline"
+                                onClick={() => juntarLinha(n.data, n.linhas[n.linhas.length - 1])}>
+                          + linha
+                        </button>
+                        {n.linhas.length > 0 && t.noites > 1 && (
+                          <button className="ml-3 text-xs text-slate-500 hover:underline"
+                                  title="Copiar esta composição para as outras noites"
+                                  onClick={() => repetirNoite(n.data)}>
+                            repetir
+                          </button>
+                        )}
+                      </>
+                    )}
+                  </td>
                 </tr>
-              ))}
-              {dias.length === 0 && (
-                <tr><td className="td text-slate-500" colSpan={10}>
-                  Sem dias — verifica as datas do grupo.
-                </td></tr>
-              )}
-            </tbody>
-            {dias.length > 0 && (
-              <tfoot className="border-t border-slate-200 bg-slate-50">
-                <tr>
-                  <td className="td font-medium" colSpan={7}>
-                    {t.noites} noite(s)
-                  </td>
-                  <td className="td text-right tabular-nums font-medium">{t.paxMax}</td>
-                  <td className="td text-right tabular-nums font-medium">{t.quartosNoite}</td>
-                  <td className="td text-right tabular-nums font-medium">{euros(t.valor)}</td>
-                </tr>
-              </tfoot>
-            )}
+
+                {n.linhas.length === 0 ? (
+                  <tr className="border-b border-slate-100">
+                    <td className="td text-sm text-slate-400" colSpan={6}>
+                      {podeEscrever
+                        ? 'Nada lançado nesta noite — «+ linha» acrescenta a primeira.'
+                        : 'Nada lançado nesta noite.'}
+                    </td>
+                  </tr>
+                ) : n.linhas.map(l => {
+                  const pax = paxDaLinha(l)
+                  const porTipologia = l.pax == null && paxDaTipologia(l.tipologia) != null
+                  return (
+                    <tr key={l.id} className="border-b border-slate-100">
+                      <td className="td">
+                        {podeEscrever ? (
+                          <>
+                            <input
+                              className="input"
+                              list="tipologias"
+                              value={l.tipologia}
+                              onChange={e => mudarLinha(l.id, { tipologia: e.target.value })}
+                              onBlur={e => gravarLinhaAgora(l.id, {
+                                tipologia: e.target.value.trim() || 'single',
+                              })}
+                            />
+                            {paxDaTipologia(l.tipologia) == null && (
+                              <span className="mt-0.5 block text-[11px] text-slate-400">
+                                tipologia livre — escreve o pax
+                              </span>
+                            )}
+                          </>
+                        ) : (
+                          <span className="text-sm font-medium">{tipologiaLabel(l.tipologia)}</span>
+                        )}
+                      </td>
+                      <td className="td w-24">
+                        <NumInput value={l.quartos} disabled={!podeEscrever}
+                                  onChange={n2 => mudarLinha(l.id, { quartos: Math.max(0, Math.round(n2)) })}
+                                  onBlur={() => gravarLinhaAgora(l.id, { quartos: l.quartos })} />
+                      </td>
+                      <td className="td w-28">
+                        <NumInput value={l.tarifa ?? 0} disabled={!podeEscrever}
+                                  onChange={n2 => mudarLinha(l.id, { tarifa: n2 || null })}
+                                  onBlur={() => gravarLinhaAgora(l.id, { tarifa: l.tarifa })} />
+                      </td>
+                      <td className="td w-24">
+                        {podeEscrever ? (
+                          <NumInput
+                            value={l.pax ?? 0}
+                            placeholder={pax != null ? String(pax) : ''}
+                            title={porTipologia ? 'Em branco = o que a tipologia leva' : undefined}
+                            onChange={n2 => mudarLinha(l.id, { pax: n2 || null })}
+                            onBlur={() => gravarLinhaAgora(l.id, { pax: l.pax })}
+                          />
+                        ) : (
+                          <div className="text-right text-sm tabular-nums">{pax ?? '—'}</div>
+                        )}
+                      </td>
+                      <td className="td text-right tabular-nums">{euros(valorDaLinha(l))}</td>
+                      <td className="td text-right">
+                        {podeEscrever && (
+                          <button className="text-xs text-slate-400 hover:text-red-600"
+                                  title="Tirar esta linha" onClick={() => tirarLinha(l.id)}>
+                            ✕
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            ))}
+            <tfoot className="border-t-2 border-slate-200 bg-slate-50">
+              <tr>
+                <td className="td font-medium">{t.noites} noite(s)</td>
+                <td className="td text-right tabular-nums font-medium">{t.quartosNoite}</td>
+                <td className="td text-right text-xs text-slate-500">quarto-noites</td>
+                <td className="td text-right tabular-nums font-medium">{t.paxMax}</td>
+                <td className="td text-right tabular-nums font-medium">{euros(t.valor)}</td>
+                <td className="td" />
+              </tr>
+            </tfoot>
           </table>
         </div>
+        <datalist id="tipologias">
+          {TIPOLOGIAS.map(x => <option key={x.id} value={x.label} />)}
+        </datalist>
         <p className="text-xs text-slate-500">
-          Uma linha por noite: o dia da saída não conta. O total de quartos é a soma
-          das noites, e o «Quartos» no resumo é o dia mais cheio.
+          Tantas linhas por noite quantas forem precisas: tipologias diferentes na
+          mesma noite, e o mesmo tipo de quarto a preços diferentes, são linhas
+          separadas. O pax em branco assume o que a tipologia leva (single 1,
+          double e twin 2, triplo 3) — escreve-o à mão quando for outro. O dia da
+          saída não é noite, e o «Quartos» no resumo é a noite mais cheia.
         </p>
       </section>
 
@@ -476,8 +614,9 @@ export default function GrupoFicha() {
             {editar.chegada && editar.saida && (
               <p className="text-xs text-slate-500">
                 {noites(editar.chegada, editar.saida)} noite(s) — {dataLonga(editar.chegada)} a{' '}
-                {dataLonga(editar.saida)}. Mudar as datas acrescenta ou tira linhas
-                nos quartos por dia; as que ficam mantêm o que lá está.
+                {dataLonga(editar.saida)}. Encurtar apaga as noites que ficam de
+                fora; esticar acrescenta noites vazias, que se preenchem com
+                «+ linha» ou copiando outra noite com «repetir».
               </p>
             )}
 
@@ -580,33 +719,5 @@ function Texto({
       onChange={e => setTxt(e.target.value)}
       onBlur={() => { if (txt !== valor) aoGravar(txt.trim()) }}
     />
-  )
-}
-
-/** As duas células de um tipo de quarto: quantos e a que tarifa. */
-function Celulas({
-  dia, tipo, editavel, mudar, gravar,
-}: {
-  dia: Dia
-  tipo: 's' | 'd' | 't'
-  editavel: boolean
-  mudar: (data: string, patch: Partial<Dia>) => void
-  gravar: (data: string) => void
-}) {
-  const qt = `${tipo}_quartos` as 's_quartos' | 'd_quartos' | 't_quartos'
-  const tf = `${tipo}_tarifa` as 's_tarifa' | 'd_tarifa' | 't_tarifa'
-  return (
-    <>
-      <td className="td w-20">
-        <NumInput value={dia[qt]} disabled={!editavel}
-                  onChange={n => mudar(dia.data, { [qt]: Math.max(0, Math.round(n)) } as Partial<Dia>)}
-                  onBlur={() => gravar(dia.data)} />
-      </td>
-      <td className="td w-24">
-        <NumInput value={dia[tf] ?? 0} disabled={!editavel}
-                  onChange={n => mudar(dia.data, { [tf]: n || null } as Partial<Dia>)}
-                  onBlur={() => gravar(dia.data)} />
-      </td>
-    </>
   )
 }

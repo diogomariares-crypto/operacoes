@@ -5,9 +5,9 @@ import { useApp } from '../lib/appState'
 import { Empty, Loading, Modal, useToast } from '../components/ui'
 import { useLembrado } from '../lib/lembrar'
 import {
-  type Dia, type Grupo, type GrupoNovo,
-  ESTADOS, criarGrupo, dataCurta, dataLonga, diaSemana, fetchDias, fetchGrupos,
-  hojeIso, mensagemDeErro, noites, quando, quartosDoDia, somaDias,
+  type Grupo, type GrupoNovo, type Linha,
+  ESTADOS, criarGrupo, dataCurta, dataLonga, diaSemana, fetchGrupos, fetchLinhas,
+  hojeIso, mensagemDeErro, noites, noitesDoGrupo, quando, somaDias, totais,
 } from '../lib/grupos'
 
 /**
@@ -26,7 +26,7 @@ export default function Grupos() {
   const podeEscrever = canWrite('FO')
 
   const [grupos, setGrupos] = useState<Grupo[]>([])
-  const [dias, setDias] = useState<Record<string, Dia[]>>({})
+  const [linhas, setLinhas] = useState<Record<string, Linha[]>>({})
   const [loading, setLoading] = useState(true)
   const [filtro, setFiltro] = useLembrado('grupos.filtro', 'por-vir')
   const [novo, setNovo] = useState<GrupoNovo | null>(null)
@@ -42,8 +42,8 @@ export default function Grupos() {
       // é isso que se quer ver ao abrir a página
       const gs = await fetchGrupos(hotelId, filtro === 'todos' ? undefined : hoje)
       setGrupos(gs)
-      const pares = await Promise.all(gs.map(async g => [g.id, await fetchDias(g.id)] as const))
-      setDias(Object.fromEntries(pares))
+      const pares = await Promise.all(gs.map(async g => [g.id, await fetchLinhas(g.id)] as const))
+      setLinhas(Object.fromEntries(pares))
     } catch (e) {
       toast(mensagemDeErro(e), 'erro')
     } finally {
@@ -94,15 +94,10 @@ export default function Grupos() {
     }
   }
 
-  const linhas = useMemo(() => grupos.map(g => {
-    const ds = dias[g.id] ?? []
-    return {
-      g,
-      quartos: ds.reduce((m, d) => Math.max(m, quartosDoDia(d)), 0),
-      pax: ds.reduce((m, d) => Math.max(m, d.pax ?? 0), 0),
-      onde: quando(g, hoje),
-    }
-  }), [grupos, dias, hoje])
+  const cartoes = useMemo(() => grupos.map(g => {
+    const t = totais(noitesDoGrupo(g, linhas[g.id] ?? []))
+    return { g, quartos: t.quartosMax, pax: t.paxMax, vazias: t.vazias, onde: quando(g, hoje) }
+  }), [grupos, linhas, hoje])
 
   const hotel = hotels.find(h => h.id === hotelId)
 
@@ -128,7 +123,7 @@ export default function Grupos() {
         </div>
       </div>
 
-      {linhas.length === 0 ? (
+      {cartoes.length === 0 ? (
         <Empty>
           {filtro === 'todos'
             ? 'Ainda não há grupos lançados neste hotel.'
@@ -136,7 +131,7 @@ export default function Grupos() {
         </Empty>
       ) : (
         <div className="space-y-2">
-          {linhas.map(({ g, quartos, pax, onde }) => {
+          {cartoes.map(({ g, quartos, pax, vazias, onde }) => {
             const est = ESTADOS.find(e => e.id === g.estado)
             const emCasa = onde === 'em casa'
             return (
@@ -167,9 +162,15 @@ export default function Grupos() {
                   </div>
                 </div>
 
-                <div className="text-right text-sm tabular-nums">
-                  <div className="font-medium">{quartos || '—'} quartos</div>
-                  <div className="text-xs text-slate-500">{pax || '—'} pax</div>
+                <div className="text-right text-sm">
+                  <div className="font-medium tabular-nums">{quartos || '—'} quartos</div>
+                  {vazias > 0 && g.estado !== 'cancelado' ? (
+                    <div className="text-xs text-amber-700">
+                      {vazias} noite(s) por preencher
+                    </div>
+                  ) : (
+                    <div className="text-xs tabular-nums text-slate-500">{pax || '—'} pax</div>
+                  )}
                 </div>
               </button>
             )
