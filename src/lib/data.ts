@@ -204,6 +204,21 @@ export async function createPurchase(p: {
   if (error) throw error
 }
 
+/**
+ * Corrige o preço unitário e o fornecedor de um artigo.
+ *
+ * Serve para o que se aprende ao encomendar não se perder: metade dos artigos
+ * está «sem preço», e sem preço não há valor de stock nem estimativa de
+ * encomenda. Quem encomenda tem a fatura à frente e é o melhor momento para o
+ * dizer uma vez por todas.
+ */
+export async function corrigirArtigo(
+  itemId: string, patch: { unit_price_eur?: number | null; supplier?: string | null },
+) {
+  const { error } = await supabase.from('items').update(patch).eq('id', itemId)
+  if (error) throw error
+}
+
 export async function receivePurchase(id: string, received_date: string, by: string | null, qty?: number) {
   const patch: Record<string, unknown> = { received_date, received_by: by }
   if (qty !== undefined) patch.qty = qty
