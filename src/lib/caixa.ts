@@ -45,7 +45,13 @@ export interface Recebido {
 
 export interface Saida {
   id: string
+  /** Dia em que se pagou — o dinheiro saiu da caixa. Manda no mês e no turno. */
   dia: string
+  /**
+   * Data impressa na fatura. Pode ser de meses antes: paga-se em setembro uma
+   * fatura de agosto, e o fecho de setembro é que a leva. Só informativa.
+   */
+  data_fatura: string | null
   fornecedor: string | null
   descricao: string | null
   documento: string | null
@@ -430,17 +436,27 @@ export async function juntarSaidas(
 ): Promise<{ inseridas: number; repetidas: number }> {
   if (!linhas.length) return { inseridas: 0, repetidas: 0 }
 
-  const assinatura = (s: Pick<Saida, 'dia' | 'valor' | 'documento' | 'fornecedor'>) =>
-    `${s.dia}|${Number(s.valor).toFixed(2)}|${s.documento ?? ''}|${s.fornecedor ?? ''}`
+  /**
+   * Quando há data de fatura, é ela que identifica a fatura — não o dia em que
+   * se pagou. Senão, colar a mesma tabela outra vez com outro dia de pagamento
+   * voltava a lançar tudo, que é precisamente o engano que esta guarda existe
+   * para apanhar.
+   */
+  type Chave = Pick<Saida, 'dia' | 'data_fatura' | 'valor' | 'documento' | 'fornecedor'>
+  const assinatura = (s: Chave) =>
+    `${s.data_fatura ?? `p:${s.dia}`}|${Number(s.valor).toFixed(2)}` +
+    `|${s.documento ?? ''}|${s.fornecedor ?? ''}`
 
-  const dias = [...new Set(linhas.map(l => l.dia))]
+  const datas = [...new Set(linhas.flatMap(l => [l.dia, l.data_fatura]))]
+    .filter((x): x is string => !!x)
+  const lista = `(${datas.join(',')})`
   const { data, error } = await supabase.from('cx_saidas')
-    .select('dia, valor, documento, fornecedor')
-    .eq('caixa_id', caixaId).in('dia', dias)
+    .select('dia, data_fatura, valor, documento, fornecedor')
+    .eq('caixa_id', caixaId)
+    .or(`dia.in.${lista},data_fatura.in.${lista}`)
   if (error) throw error
 
-  const jaLa = new Set((data ?? []).map(x =>
-    assinatura(x as Pick<Saida, 'dia' | 'valor' | 'documento' | 'fornecedor'>)))
+  const jaLa = new Set((data ?? []).map(x => assinatura(x as Chave)))
 
   const novas: typeof linhas = []
   for (const l of linhas) {
@@ -582,6 +598,7 @@ export function lerColagem(texto: string): Omit<Saida, 'id' | 'ficheiro' | 'enve
     const curto = !mapa && c.length < 5
     fora.push({
       dia,
+      data_fatura: null,
       fornecedor: (em('fornecedor', 1) || null) ?? null,
       descricao: curto ? null : (em('descricao', 2) || null) ?? null,
       documento: (curto ? c[2] : em('documento', 3)) || null,

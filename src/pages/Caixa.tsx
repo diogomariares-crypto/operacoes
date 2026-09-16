@@ -453,7 +453,12 @@ function LinhaSaida({
       <div className="min-w-[120px] flex-1">
         <div className="truncate text-sm text-slate-700">{s.fornecedor || '—'}</div>
         <div className="truncate text-[11px] text-slate-400">
-          {[s.descricao, s.documento].filter(Boolean).join(' · ') || 'sem descrição'}
+          {[
+            s.descricao,
+            s.documento,
+            // só se as datas forem diferentes: repetir a mesma data é ruído
+            s.data_fatura && s.data_fatura !== s.dia ? `fatura de ${dmy(s.data_fatura)}` : null,
+          ].filter(Boolean).join(' · ') || 'sem descrição'}
         </div>
       </div>
       {/*
@@ -521,14 +526,24 @@ function NovaSaida({
   onJuntar: (s: Omit<Saida, 'id' | 'ficheiro' | 'envelope_id'>) => Promise<void>
 }) {
   const [s, setS] = useState({
-    dia: todayISO(), fornecedor: '', descricao: '', documento: '', valor: 0,
+    dia: todayISO(), data_fatura: '', fornecedor: '', descricao: '', documento: '', valor: 0,
   })
   return (
     <div className="mt-3 grid gap-2 border-t border-slate-100 pt-3 sm:grid-cols-6">
+      {/*
+        Duas datas: o dia em que se pagou, que manda no mês e no turno, e a data
+        da fatura, que pode ser de meses antes. Pagar hoje uma fatura de agosto
+        é normal, e o fecho de hoje é que a leva.
+      */}
       <div className="sm:col-span-2">
-        <label className="label">Data</label>
+        <label className="label">Pago em</label>
         <input type="date" className="input h-9 text-sm" value={s.dia}
                onChange={e => setS({ ...s, dia: e.target.value })} />
+      </div>
+      <div className="sm:col-span-2">
+        <label className="label">Data da fatura <span className="text-slate-400">(se for outra)</span></label>
+        <input type="date" className="input h-9 text-sm" value={s.data_fatura}
+               onChange={e => setS({ ...s, data_fatura: e.target.value })} />
       </div>
       <div className="sm:col-span-2">
         <label className="label">Fornecedor</label>
@@ -557,12 +572,13 @@ function NovaSaida({
           onClick={async () => {
             await onJuntar({
               dia: s.dia,
+              data_fatura: s.data_fatura || null,
               fornecedor: s.fornecedor.trim() || null,
               descricao: s.descricao.trim() || null,
               documento: s.documento.trim() || null,
               valor: s.valor,
             })
-            setS({ ...s, fornecedor: '', descricao: '', documento: '', valor: 0 })
+            setS({ ...s, data_fatura: '', fornecedor: '', descricao: '', documento: '', valor: 0 })
           }}
         >Juntar</button>
       </div>
@@ -579,11 +595,30 @@ function ColarFaturas({
   onGravar: (l: Omit<Saida, 'id' | 'ficheiro' | 'envelope_id'>[]) => Promise<void>
 }) {
   const [texto, setTexto] = useState('')
-  const linhas = useMemo(() => lerColagem(texto), [texto])
+  /**
+   * A data da tabela pode ser a da fatura ou o dia em que se pagou, e a
+   * diferença decide o mês do fecho: paga-se em setembro uma fatura de agosto e
+   * é setembro que a leva. As Saídas de Caixa antigas traziam o dia do
+   * pagamento; um extracto de faturas traz a data da fatura.
+   */
+  const [tipoData, setTipoData] = useState<'fatura' | 'pagamento'>('fatura')
+  // dentro do mês que está à vista, senão o lançamento nasce escondido
+  const [pago, setPago] = useState(() => {
+    const hoje = todayISO()
+    return hoje >= de && hoje <= ate ? hoje : ate
+  })
+
+  const lidas = useMemo(() => lerColagem(texto), [texto])
+  const linhas = useMemo(
+    () => lidas.map(l => (tipoData === 'pagamento'
+      ? l
+      : { ...l, dia: pago, data_fatura: l.dia })),
+    [lidas, tipoData, pago])
   const total = linhas.reduce((s, l) => s + l.valor, 0)
   // as de outro mês entram, mas neste ecrã não aparecem — dizê-lo antes de
   // gravar evita a colagem repetida a pensar que se perderam
   const fora = linhas.filter(l => l.dia < de || l.dia > ate)
+  const deOutroMes = lidas.filter(l => l.dia < de || l.dia > ate).length
 
   return (
     <Modal open onClose={onFechar} title="Colar várias faturas" wide>
@@ -604,6 +639,31 @@ function ColarFaturas({
         value={texto}
         onChange={e => setTexto(e.target.value)}
       />
+      <div className="mt-3 grid gap-3 rounded-lg bg-slate-50 p-3 sm:grid-cols-2">
+        <div>
+          <label className="label">A coluna da data é</label>
+          <select className="input h-9 text-sm" value={tipoData}
+                  onChange={e => setTipoData(e.target.value as 'fatura' | 'pagamento')}>
+            <option value="fatura">a data da fatura</option>
+            <option value="pagamento">o dia em que se pagou</option>
+          </select>
+        </div>
+        {tipoData === 'fatura' && (
+          <div>
+            <label className="label">Pago em</label>
+            <input type="date" className="input h-9 text-sm" value={pago}
+                   onChange={e => setPago(e.target.value)} />
+          </div>
+        )}
+      </div>
+      <p className="mt-1.5 text-xs text-slate-500">
+        {tipoData === 'fatura'
+          ? `A data da tabela fica guardada como data da fatura, e as ${linhas.length || ''} saída(s) entram todas no dia em que se pagou — é esse que manda no mês e no turno.`
+          : 'Cada linha entra no dia que traz na tabela, como dia de pagamento.'}
+        {tipoData === 'pagamento' && deOutroMes > 0
+          && ` ${deOutroMes} são de fora deste mês.`}
+      </p>
+
       {fora.length > 0 && (
         <p className="mt-2 rounded bg-amber-50 px-3 py-2 text-xs text-amber-800">
           {fora.length === 1 ? 'Uma fatura é' : `${fora.length} faturas são`} de fora
