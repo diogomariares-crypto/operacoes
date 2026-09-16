@@ -70,6 +70,12 @@ export interface Envelope {
   /** Fim do turno, com hora. */
   fim: string
   responsavel: string | null
+  /**
+   * Dinheiro que já estava na caixa ao abrir. Nulo significa «o troco que o
+   * turno anterior deixou», que é a regra; escreve-se à mão quando não há
+   * turno anterior registado, para a corrente arrancar certa.
+   */
+  abertura: number | null
   valor: number
   denominacoes: Record<string, number>
   /** Troco que não coube no envelope e ficou na caixa para o turno seguinte. */
@@ -222,7 +228,8 @@ export function balanco(
   let acumulado = 0
   for (const env of ordenados) {
     const faturas = porEnvelope.get(env.id) ?? []
-    const contas = contasDoEnvelope(env, abertura, recebido, faturas)
+    // a abertura escrita à mão manda; sem ela, o troco do turno anterior
+    const contas = contasDoEnvelope(env, env.abertura ?? abertura, recebido, faturas)
     acumulado = cents(acumulado + contas.diferenca)
     linhas.push({ envelope: env, contas, faturas, acumulado })
     abertura = env.transporte

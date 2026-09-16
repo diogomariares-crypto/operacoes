@@ -390,7 +390,13 @@ function LinhaTurno({
         )}
       </td>
       <td className="td text-slate-600">{l.envelope.responsavel || '—'}</td>
-      <td className="td text-right tabular-nums text-slate-500">{zero(c.abertura)}</td>
+      <td className="td text-right tabular-nums text-slate-500">
+        {zero(c.abertura)}
+        {/* uma abertura escrita à mão não veio do turno anterior — vê-se logo */}
+        {l.envelope.abertura != null && (
+          <span className="ml-1 text-[11px] text-amber-700" title="escrita à mão">à mão</span>
+        )}
+      </td>
       <td className="td text-right tabular-nums text-slate-700">
         {money(c.recebido)}
         <span className="ml-1 text-[11px] text-slate-400">{c.nPagamentos}</span>
@@ -729,6 +735,14 @@ function ContarEnvelope({
   const [responsavel, setResponsavel] = useState(existente?.responsavel ?? '')
   const [nota, setNota] = useState(existente?.nota ?? '')
   const [transporte, setTransporte] = useState(existente?.transporte ?? 0)
+  /**
+   * Nulo é «vem do turno anterior». Escreve-se um valor quando o turno
+   * anterior não está registado — é o caso do primeiro fecho de sempre — e daí
+   * para a frente a cadeia volta a encadear-se sozinha.
+   */
+  const [aberturaManual, setAberturaManual] = useState<number | null>(
+    existente?.abertura ?? null)
+  const aberturaUsada = aberturaManual ?? abertura
   const [qtd, setQtd] = useState<Record<string, number>>(existente?.denominacoes ?? {})
   const [escolhidas, setEscolhidas] = useState<string[]>(
     saidas.filter(s => existente && s.envelope_id === existente.id).map(s => s.id))
@@ -751,7 +765,7 @@ function ContarEnvelope({
   const pecas = Object.values(qtd).reduce((s, n) => s + (n || 0), 0)
 
   const c = contasDoEnvelope(
-    { inicio, fim, valor: contado, transporte }, abertura, doTurno, faturas)
+    { inicio, fim, valor: contado, transporte }, aberturaUsada, doTurno, faturas)
 
   const gravar = async () => {
     setAGravar(true)
@@ -760,6 +774,7 @@ function ContarEnvelope({
         dia: fim.slice(0, 10),
         inicio, fim,
         responsavel: responsavel.trim() || null,
+        abertura: aberturaManual,
         valor: contado,
         denominacoes: Object.fromEntries(Object.entries(qtd).filter(([, n]) => n > 0)),
         transporte,
@@ -810,7 +825,40 @@ function ContarEnvelope({
       <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/60 p-4">
         <div className="grid gap-2 sm:grid-cols-2">
           <dl className="space-y-1 text-sm">
-            <Conta rotulo="Ficou do turno anterior" valor={c.abertura} apagado={!c.abertura} />
+            {/*
+              A abertura é calculada — é o troco que o turno anterior deixou —
+              mas tem de se poder escrever: o primeiro turno não tem anterior, e
+              há fechos antigos que nunca foram registados. Sem isto, a corrente
+              nunca arrancava certa.
+            */}
+            <div className="flex items-center justify-between gap-2 py-0.5">
+              <span className="text-slate-500">
+                {aberturaManual == null ? 'Ficou do turno anterior' : 'Já estava na caixa'}
+              </span>
+              <span className="flex items-center gap-1.5">
+                {aberturaManual == null ? (
+                  <>
+                    <span className={`tabular-nums ${c.abertura ? 'text-slate-700' : 'text-slate-300'}`}>
+                      {money(c.abertura)}
+                    </span>
+                    <button className="text-[11px] text-brand-700 hover:underline"
+                            onClick={() => setAberturaManual(abertura)}>
+                      corrigir
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <NumInput className="h-7 w-24 text-sm" value={aberturaManual}
+                              onChange={setAberturaManual} />
+                    <button className="text-[11px] text-slate-500 hover:underline"
+                            title={`Voltar ao que o turno anterior deixou (${money(abertura)})`}
+                            onClick={() => setAberturaManual(null)}>
+                      automático
+                    </button>
+                  </>
+                )}
+              </span>
+            </div>
             <Conta rotulo={`Recebido no turno · ${c.nPagamentos} pagamentos`} valor={c.recebido} />
             <Conta rotulo={`Faturas neste envelope · ${c.nFaturas}`} valor={-c.faturas}
                    apagado={!c.faturas} />
