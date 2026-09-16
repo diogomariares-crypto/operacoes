@@ -411,6 +411,55 @@ export async function juntarSaida(caixaId: string, s: Omit<Saida, 'id'>, por: st
   return data.id as string
 }
 
+/**
+ * Lança de uma vez as faturas coladas, saltando as que já lá estão.
+ *
+ * A mesma colagem feita duas vezes acontece — o ecrã só mostra o mês que está
+ * escolhido, e uma fatura de outro mês entra sem aparecer, o que convida a
+ * colar outra vez a pensar que falhou. Sem esta guarda, ficavam cópias
+ * invisíveis a estragar o total do mês delas.
+ *
+ * Duas faturas são a mesma se tiverem o mesmo dia, valor, documento e
+ * fornecedor. Dois talões iguais do mesmo fornecedor no mesmo dia são raros e
+ * distinguem-se pelo documento; se nem isso tiverem, lançam-se à mão.
+ */
+export async function juntarSaidas(
+  caixaId: string,
+  linhas: Omit<Saida, 'id' | 'ficheiro' | 'envelope_id'>[],
+  por: string | null,
+): Promise<{ inseridas: number; repetidas: number }> {
+  if (!linhas.length) return { inseridas: 0, repetidas: 0 }
+
+  const assinatura = (s: Pick<Saida, 'dia' | 'valor' | 'documento' | 'fornecedor'>) =>
+    `${s.dia}|${Number(s.valor).toFixed(2)}|${s.documento ?? ''}|${s.fornecedor ?? ''}`
+
+  const dias = [...new Set(linhas.map(l => l.dia))]
+  const { data, error } = await supabase.from('cx_saidas')
+    .select('dia, valor, documento, fornecedor')
+    .eq('caixa_id', caixaId).in('dia', dias)
+  if (error) throw error
+
+  const jaLa = new Set((data ?? []).map(x =>
+    assinatura(x as Pick<Saida, 'dia' | 'valor' | 'documento' | 'fornecedor'>)))
+
+  const novas: typeof linhas = []
+  for (const l of linhas) {
+    const k = assinatura(l)
+    if (jaLa.has(k)) continue
+    jaLa.add(k)  // a própria colagem pode trazer a linha repetida
+    novas.push(l)
+  }
+
+  if (novas.length) {
+    const { error: e2 } = await supabase.from('cx_saidas').insert(
+      novas.map(l => ({
+        ...l, caixa_id: caixaId, ficheiro: null, envelope_id: null, atualizado_por: por,
+      })))
+    if (e2) throw e2
+  }
+  return { inseridas: novas.length, repetidas: linhas.length - novas.length }
+}
+
 export async function guardarSaida(id: string, patch: Partial<Saida>) {
   const { error } = await supabase.from('cx_saidas').update(patch).eq('id', id)
   if (error) throw error
@@ -551,12 +600,41 @@ const POSICOES = {
   valor: ['saida', 'saída', 'salidas', 'valor', 'total', 'importe', 'montante'],
 }
 
-/** Devolve o índice de cada campo, ou null se a linha não for um cabeçalho. */
+/**
+ * Tira acentos, maiúsculas e o «º» para comparar cabeçalhos: «Número» e
+ * «numero» têm de ser a mesma palavra.
+ */
+const chave = (x: string) =>
+  x.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[º°.]/g, '').replace(/\s+/g, ' ').trim()
+
+/**
+ * Devolve o índice de cada campo, ou null se a linha não for um cabeçalho.
+ *
+ * O nome tem de estar no princípio da célula, não ser a célula toda: ninguém
+ * escreve «Data» numa folha real, escreve «Data da fatura». Antes exigia-se
+ * igualdade exacta, o cabeçalho não era reconhecido, e as colunas entravam
+ * pela posição — era assim que o número da fatura ia para o campo do
+ * fornecedor sem ninguém perceber porquê.
+ *
+ * Princípio e não «contém» porque «Data da fatura» também contém «fatura», que
+ * é nome do número do documento; em português o substantivo vem à frente, e é
+ * por ele que se decide.
+ */
 function cabecalho(c: string[]): Record<keyof typeof POSICOES, number | null> | null {
-  const limpo = c.map(x => x.toLowerCase().replace(/[º°.]/g, '').trim())
+  const limpo = c.map(chave)
+  const comeca = (x: string, n: string) => {
+    const k = chave(n)
+    return x === k || (x.startsWith(k) && !/[a-z0-9]/.test(x.charAt(k.length)))
+  }
   const achar = (nomes: string[]) => {
-    const i = limpo.findIndex(x => nomes.some(n => x === n.replace(/[º°.]/g, '')))
-    return i < 0 ? null : i
+    // o nome mais comprido manda, para «nº documento» ganhar a «nº»
+    const ordenados = [...nomes].sort((a, b) => b.length - a.length)
+    for (const n of ordenados) {
+      const i = limpo.findIndex(x => comeca(x, n))
+      if (i >= 0) return i
+    }
+    return null
   }
   const m = {
     dia: achar(POSICOES.dia),

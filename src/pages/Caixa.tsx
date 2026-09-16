@@ -4,7 +4,8 @@ import { useAuth } from '../lib/auth'
 import {
   DENOMINACOES, apagar, apagarFicheiro, balanco, contasDoEnvelope, estaCerto, ehNota,
   fetchCaixas, fetchMes, guardarEnvelope, guardarFicheiro, guardarSaida, importarRecebido,
-  juntarDeposito, juntarEnvelope, juntarRecebidoManual, juntarSaida, lerColagem,
+  juntarDeposito, juntarEnvelope, juntarRecebidoManual, juntarSaida, juntarSaidas,
+  lerColagem,
   instante, lerRelatorioPms, linkDaFatura, recebidoDoTurno, somaDenominacoes, TOLERANCIA,
   type Balanco, type Caixa, type Deposito, type Envelope, type LinhaDoMes,
   type Recebido, type Saida,
@@ -311,11 +312,18 @@ export default function CaixaPage() {
 
       {colar && (
         <ColarFaturas
+          de={`${mes}-01`} ate={lastDayOfMonth(mes)}
           onFechar={() => setColar(false)}
           onGravar={async linhas => {
-            for (const l of linhas)
-              await juntarSaida(caixaId, { ...l, ficheiro: null, envelope_id: null }, email)
-            setColar(false); carregar(); toast(`${linhas.length} faturas lançadas`)
+            const de = `${mes}-01`, ate = lastDayOfMonth(mes)
+            const { inseridas, repetidas } = await juntarSaidas(caixaId, linhas, email)
+            const foraDoMes = linhas.filter(l => l.dia < de || l.dia > ate).length
+            setColar(false); carregar()
+            toast([
+              `${inseridas} fatura(s) lançadas`,
+              repetidas ? `${repetidas} já lá estavam` : '',
+              foraDoMes ? `${foraDoMes} de outro mês — muda o mês para as ver` : '',
+            ].filter(Boolean).join(' · '))
           }}
         />
       )}
@@ -563,14 +571,19 @@ function NovaSaida({
 }
 
 function ColarFaturas({
-  onFechar, onGravar,
+  de, ate, onFechar, onGravar,
 }: {
+  de: string
+  ate: string
   onFechar: () => void
   onGravar: (l: Omit<Saida, 'id' | 'ficheiro' | 'envelope_id'>[]) => Promise<void>
 }) {
   const [texto, setTexto] = useState('')
   const linhas = useMemo(() => lerColagem(texto), [texto])
   const total = linhas.reduce((s, l) => s + l.valor, 0)
+  // as de outro mês entram, mas neste ecrã não aparecem — dizê-lo antes de
+  // gravar evita a colagem repetida a pensar que se perderam
+  const fora = linhas.filter(l => l.dia < de || l.dia > ate)
 
   return (
     <Modal open onClose={onFechar} title="Colar várias faturas" wide>
@@ -591,6 +604,17 @@ function ColarFaturas({
         value={texto}
         onChange={e => setTexto(e.target.value)}
       />
+      {fora.length > 0 && (
+        <p className="mt-2 rounded bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          {fora.length === 1 ? 'Uma fatura é' : `${fora.length} faturas são`} de fora
+          do mês que está escolhido ({fora.map(f => dmy(f.dia)).join(', ')}).{' '}
+          {fora.length === 1 ? 'Fica lançada' : 'Ficam lançadas'} no mês{' '}
+          {fora.length === 1 ? 'dela' : 'delas'}, por isso não{' '}
+          {fora.length === 1 ? 'aparece' : 'aparecem'} nesta lista — muda o mês em
+          cima para {fora.length === 1 ? 'a ver' : 'as ver'}.
+        </p>
+      )}
+
       <div className="mt-3 flex flex-wrap items-center gap-3">
         <span className="text-sm text-slate-600">
           {linhas.length
