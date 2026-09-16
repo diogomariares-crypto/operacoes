@@ -7,6 +7,7 @@ import {
   juntarDeposito, juntarEnvelope, juntarRecebidoManual, juntarSaida, juntarSaidas,
   lerColagem,
   instante, lerRelatorioPms, linkDaFatura, recebidoDoTurno, somaDenominacoes, TOLERANCIA,
+  descreveDiferenca, veredicto,
   type Balanco, type Caixa, type Deposito, type Envelope, type LinhaDoMes,
   type Recebido, type Saida,
 } from '../lib/caixa'
@@ -154,7 +155,9 @@ export default function CaixaPage() {
             {b.diferenca > 0 ? '+' : ''}{money(b.diferenca)}
           </div>
           <div className="mt-0.5 text-xs text-slate-600">
-            {certo ? 'os turnos fecham certos'
+            {veredicto(b.diferenca) === 'exacto' ? 'os turnos fecham exactos'
+              : veredicto(b.diferenca) === 'troco'
+                ? `${b.diferenca > 0 ? 'sobram' : 'faltam'} ${money(Math.abs(b.diferenca))} no mês — troco`
               : b.diferenca > 0 ? 'contámos a mais do que o esperado'
               : 'falta dinheiro ou faltam faturas por lançar'}
           </div>
@@ -377,6 +380,8 @@ function LinhaTurno({
   onApagar: () => void
 }) {
   const c = l.contas
+  const vDif = veredicto(c.diferenca)
+  const vAcum = veredicto(l.acumulado)
   const zero = (n: number) => (n ? money(n) : <span className="text-slate-300">—</span>)
   return (
     <tr className="border-b border-slate-100 hover:bg-slate-50/60">
@@ -410,13 +415,21 @@ function LinhaTurno({
       </td>
       <td className="td text-right font-medium tabular-nums text-slate-700">{money(c.esperado)}</td>
       <td className="td text-right font-semibold tabular-nums text-slate-900">{money(c.contado)}</td>
+      {/*
+        A diferença mostra-se sempre que existir. Antes um turno com dez
+        cêntimos a mais aparecia com um traço, como se fechasse exacto — o
+        traço é só para o zero.
+      */}
       <td className={`td text-right font-semibold tabular-nums ${
-        c.certo ? 'text-slate-300' : c.diferenca > 0 ? 'text-[#0a7d0a]' : 'text-[#b32d2d]'}`}>
-        {c.certo ? '—' : `${c.diferenca > 0 ? '+' : ''}${money(c.diferenca)}`}
+        vDif === 'exacto' ? 'text-slate-300'
+          : vDif === 'troco' ? 'text-slate-500'
+          : c.diferenca > 0 ? 'text-[#0a7d0a]' : 'text-[#b32d2d]'}`}>
+        {vDif === 'exacto' ? '—' : `${c.diferenca > 0 ? '+' : ''}${money(c.diferenca)}`}
       </td>
       <td className={`td text-right tabular-nums ${
-        Math.abs(l.acumulado) <= TOLERANCIA ? 'text-slate-300' : 'text-slate-600'}`}>
-        {Math.abs(l.acumulado) <= TOLERANCIA ? '—'
+        vAcum === 'exacto' ? 'text-slate-300'
+          : vAcum === 'troco' ? 'text-slate-500' : 'text-slate-700'}`}>
+        {vAcum === 'exacto' ? '—'
           : `${l.acumulado > 0 ? '+' : ''}${money(l.acumulado)}`}
       </td>
       <td className="td text-right">
@@ -872,14 +885,25 @@ function ContarEnvelope({
             <div className="text-3xl font-semibold tabular-nums text-slate-900">
               {money(c.esperado)}
             </div>
-            {contado > 0 && (
-              <div className={`mt-1 text-sm font-medium tabular-nums ${
-                c.certo ? 'text-[#0a7d0a]' : 'text-[#b32d2d]'}`}>
-                contado {money(contado)}
-                {c.certo ? ' · bate certo'
-                  : ` · ${c.diferenca > 0 ? 'sobram' : 'faltam'} ${money(Math.abs(c.diferenca))}`}
-              </div>
-            )}
+            {contado > 0 && (() => {
+              // dez cêntimos a mais são dez cêntimos a mais: dizem-se sempre, e
+              // a tolerância só decide se levantam bandeira vermelha
+              const v = veredicto(c.diferenca)
+              return (
+                <>
+                  <div className={`mt-1 text-sm font-medium tabular-nums ${
+                    v === 'exacto' ? 'text-[#0a7d0a]'
+                      : v === 'troco' ? 'text-slate-600' : 'text-[#b32d2d]'}`}>
+                    contado {money(contado)} · {descreveDiferenca(c.diferenca, money)}
+                  </div>
+                  {v === 'troco' && (
+                    <div className="text-[11px] text-slate-500">
+                      dentro de {money(TOLERANCIA)} — conta como troco
+                    </div>
+                  )}
+                </>
+              )
+            })()}
           </div>
         </div>
 

@@ -262,6 +262,27 @@ export function balanco(
 
 export const estaCerto = (b: Balanco) => Math.abs(b.diferenca) <= TOLERANCIA
 
+/**
+ * Como se lê uma diferença.
+ *
+ * «Dentro da tolerância» não é «bate certo», e chamar-lhe isso foi um erro meu:
+ * dez cêntimos a mais são dez cêntimos a mais, e quem conta o envelope tem
+ * direito a saber. A tolerância serve para não levantar bandeira vermelha por
+ * troco — não para esconder o número.
+ */
+export type Veredicto = 'exacto' | 'troco' | 'errado'
+
+export const veredicto = (diferenca: number): Veredicto =>
+  cents(diferenca) === 0 ? 'exacto'
+    : Math.abs(diferenca) <= TOLERANCIA ? 'troco' : 'errado'
+
+/** «bate certo», «sobram 0,10 €», «faltam 12,40 €». */
+export const descreveDiferenca = (diferenca: number, euros: (n: number) => string) => {
+  const d = cents(diferenca)
+  if (d === 0) return 'bate certo'
+  return `${d > 0 ? 'sobram' : 'faltam'} ${euros(Math.abs(d))}`
+}
+
 /* --------------------------------------------------- relatório de pagamentos */
 
 export interface LinhaPms {
