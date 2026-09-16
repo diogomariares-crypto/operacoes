@@ -37,6 +37,17 @@ const agora = () => {
 /** "01/09 23:00" */
 const quando = (t: string) => `${t.slice(8, 10)}/${t.slice(5, 7)} ${t.slice(11, 16)}`
 
+/**
+ * Os turnos em que esta fatura pode ter vindo.
+ *
+ * A fatura tem dia mas não tem hora — é o que vem escrito nela — por isso um
+ * dia que caia no fecho de um turno e na abertura do seguinte serve aos dois.
+ * Nesse caso devolvem-se os dois e quem sabe decide; adivinhar metia dinheiro
+ * no envelope errado.
+ */
+const turnosDoDia = (envelopes: Envelope[], dia: string) =>
+  envelopes.filter(e => dia >= e.inicio.slice(0, 10) && dia <= e.fim.slice(0, 10))
+
 /** Só a hora: "23:00". */
 const horaDe = (t: string) => t.slice(11, 16)
 
@@ -203,18 +214,47 @@ export default function CaixaPage() {
             <h3 className="text-sm font-semibold text-slate-700">
               Faturas pagas em dinheiro
             </h3>
-            <button className="btn-ghost text-sm" onClick={() => setColar(true)}>
-              Colar várias
-            </button>
+            <div className="flex items-center gap-2">
+              {d.saidas.some(s => !s.envelope_id) && d.envelopes.length > 0 && (
+                <button
+                  className="btn-ghost text-sm"
+                  title="Põe cada fatura solta no turno em que o dia dela cai"
+                  onClick={async () => {
+                    const soltas = d.saidas.filter(s => !s.envelope_id)
+                    const claras = soltas
+                      .map(s => ({ s, cs: turnosDoDia(d.envelopes, s.dia) }))
+                      .filter(x => x.cs.length === 1)
+                    if (!claras.length) {
+                      toast('Nenhuma fatura solta cai num turno só — escolhe à mão', 'erro')
+                      return
+                    }
+                    for (const { s, cs } of claras) {
+                      await guardarSaida(s.id, { envelope_id: cs[0].id })
+                    }
+                    const restam = soltas.length - claras.length
+                    toast(`${claras.length} fatura(s) postas no turno do dia`
+                      + (restam ? ` · ${restam} ficaram por escolher` : ''))
+                    carregar()
+                  }}
+                >
+                  Atribuir pelo dia
+                </button>
+              )}
+              <button className="btn-ghost text-sm" onClick={() => setColar(true)}>
+                Colar várias
+              </button>
+            </div>
           </div>
           <p className="text-xs text-slate-400">
-            Lança-as aqui e depois diz, no fecho do turno, quais vinham dentro do envelope.
+            Lança-as aqui e escolhe o turno em que vieram — na fatura, ou marcando-as
+            no fecho do turno.
           </p>
 
           <div className="mt-3 max-h-[320px] space-y-1.5 overflow-y-auto">
             {d.saidas.map(s => (
               <LinhaSaida key={s.id} s={s} caixaId={caixaId}
                           envelope={d.envelopes.find(e => e.id === s.envelope_id) ?? null}
+                          envelopes={d.envelopes}
                           onMudou={carregar}
                           onApagar={async () => {
                             if (!confirm(`Apagar a fatura de ${s.fornecedor ?? dmy(s.dia)}?`)) return
@@ -376,11 +416,12 @@ function LinhaTurno({
 /* ------------------------------------------------------------------ saídas */
 
 function LinhaSaida({
-  s, caixaId, envelope, onMudou, onApagar,
+  s, caixaId, envelope, envelopes, onMudou, onApagar,
 }: {
   s: Saida
   caixaId: string
   envelope: Envelope | null
+  envelopes: Envelope[]
   onMudou: () => void
   onApagar: () => void
 }) {
@@ -407,10 +448,36 @@ function LinhaSaida({
           {[s.descricao, s.documento].filter(Boolean).join(' · ') || 'sem descrição'}
         </div>
       </div>
-      <span className={`chip shrink-0 ${envelope ? 'bg-slate-100 text-slate-600'
-                                                 : 'bg-amber-100 text-amber-800'}`}>
-        {envelope ? quando(envelope.fim) : 'sem turno'}
-      </span>
+      {/*
+        O turno escolhe-se aqui, na fatura. Continuava a poder marcar-se no
+        fecho do turno, mas quem lança dez faturas de uma vez quer dizer o
+        turno de cada uma sem abrir dez vezes o envelope. Os turnos do dia da
+        fatura aparecem primeiro, que são quase sempre o que se quer.
+      */}
+      <select
+        className={`shrink-0 rounded-full border-0 px-2 py-0.5 text-xs font-medium tabular-nums ${
+          envelope ? 'bg-slate-100 text-slate-600' : 'bg-amber-100 text-amber-800'}`}
+        value={s.envelope_id ?? ''}
+        title="Em que turno veio esta fatura"
+        onChange={async e => {
+          await guardarSaida(s.id, { envelope_id: e.target.value || null })
+          onMudou()
+        }}
+      >
+        <option value="">sem turno</option>
+        {[...envelopes]
+          .sort((a, b) => {
+            const na = turnosDoDia([a], s.dia).length, nb = turnosDoDia([b], s.dia).length
+            if (na !== nb) return nb - na
+            return b.inicio.localeCompare(a.inicio)
+          })
+          .map(e => (
+            <option key={e.id} value={e.id}>
+              {quando(e.inicio)} → {quando(e.fim)}
+              {turnosDoDia([e], s.dia).length ? ' ·  do dia' : ''}
+            </option>
+          ))}
+      </select>
       <span className="shrink-0 text-sm font-semibold tabular-nums text-slate-800">
         {money(s.valor)}
       </span>
