@@ -11,7 +11,9 @@ import {
 import { money, dmy } from '../lib/format'
 import { Loading, Modal, NumInput, Spinner, StatCard, TextoAuto, useToast } from '../components/ui'
 import BulkEdit, { Caixa, type CampoBulk } from '../components/BulkEdit'
+import FiltroMulti from '../components/FiltroMulti'
 import { useSeleccao } from '../lib/seleccao'
+import { useLembrado } from '../lib/lembrar'
 
 const CORES_ESTADO: Record<Estado, string> = {
   activo: 'bg-slate-100 text-slate-600',
@@ -33,10 +35,16 @@ export default function Rh() {
   const [saving, setSaving] = useState(0)
 
   const [busca, setBusca] = useState('')
-  const [fEmpresa, setFEmpresa] = useState('')
-  const [fHotel, setFHotel] = useState('')
-  const [fDep, setFDep] = useState('')
-  const [fEstado, setFEstado] = useState('')
+  /**
+   * Os filtros são listas: lista vazia é «todos». A pergunta real quase nunca é
+   * «o Gravity», é «o Gravity e o Tokyo» — e ficam lembrados na sessão, que
+   * quem anda a arrumar pessoal passa a vida a saltar para os custos e a voltar.
+   */
+  const lista = (v: unknown): v is string[] => Array.isArray(v) && v.every(x => typeof x === 'string')
+  const [fEmpresa, setFEmpresa] = useLembrado<string[]>('rh.f.empresa', [], { valido: lista })
+  const [fHotel, setFHotel] = useLembrado<string[]>('rh.f.hotel', [], { valido: lista })
+  const [fDep, setFDep] = useLembrado<string[]>('rh.f.dep', [], { valido: lista })
+  const [fEstado, setFEstado] = useLembrado<string[]>('rh.f.estado', [], { valido: lista })
   const [semSalario, setSemSalario] = useState(false)
   const [ficha, setFicha] = useState<string | null>(null)
   const [novo, setNovo] = useState(false)
@@ -86,10 +94,10 @@ export default function Rh() {
     return pessoas.filter(p =>
       (!q || p.nome.toLowerCase().includes(q) || String(p.numero ?? '').includes(q) ||
         (p.funcao ?? '').toLowerCase().includes(q)) &&
-      (!fEmpresa || p.empresa_id === fEmpresa) &&
-      (!fHotel || (fHotel === '—' ? !p.hotel_id : p.hotel_id === fHotel)) &&
-      (!fDep || (fDep === '—' ? !p.departamento_id : p.departamento_id === fDep)) &&
-      (!fEstado || p.estado === fEstado) &&
+      (!fEmpresa.length || fEmpresa.includes(p.empresa_id)) &&
+      (!fHotel.length || fHotel.includes(p.hotel_id ?? '—')) &&
+      (!fDep.length || fDep.includes(p.departamento_id ?? '—')) &&
+      (!fEstado.length || fEstado.includes(p.estado)) &&
       (!semSalario || p.vencimento_base <= 0))
   }, [pessoas, busca, fEmpresa, fHotel, fDep, fEstado, semSalario])
 
@@ -194,28 +202,30 @@ export default function Rh() {
       <div className="card flex flex-wrap items-end gap-2 p-3">
         <input className="input min-w-[200px] flex-1" placeholder="Procurar por nome, nº ou função…"
                value={busca} onChange={e => setBusca(e.target.value)} />
-        <select className="input w-auto" value={fEmpresa} onChange={e => setFEmpresa(e.target.value)}>
-          <option value="">Todas as empresas</option>
-          {empresas.map(e => <option key={e.id} value={e.id}>{e.nome}</option>)}
-        </select>
-        <select className="input w-auto" value={fHotel} onChange={e => setFHotel(e.target.value)}>
-          <option value="">Todos os hotéis</option>
-          {hotels.map(h => <option key={h.id} value={h.id}>{h.name}</option>)}
-          <option value="—">Sem hotel</option>
-        </select>
-        <select className="input w-auto" value={fDep} onChange={e => setFDep(e.target.value)}>
-          <option value="">Todos os departamentos</option>
-          {deps.map(d => <option key={d.id} value={d.id}>{d.nome}</option>)}
-          <option value="—">Sem departamento</option>
-        </select>
-        <select className="input w-auto" value={fEstado} onChange={e => setFEstado(e.target.value)}>
-          <option value="">Todos os estados</option>
-          {ESTADOS.map(e => <option key={e.v} value={e.v}>{e.rot}</option>)}
-        </select>
+        <FiltroMulti todos="Todas as empresas" valor={fEmpresa} onMudar={setFEmpresa}
+                     opcoes={empresas.map(e => ({ v: e.id, rot: e.nome }))} />
+        <FiltroMulti todos="Todos os hotéis" valor={fHotel} onMudar={setFHotel}
+                     opcoes={[...hotels.map(h => ({ v: h.id, rot: h.name })),
+                              { v: '—', rot: 'Sem hotel' }]} />
+        <FiltroMulti todos="Todos os departamentos" valor={fDep} onMudar={setFDep}
+                     opcoes={[...deps.map(d => ({ v: d.id, rot: d.nome })),
+                              { v: '—', rot: 'Sem departamento' }]} />
+        <FiltroMulti todos="Todos os estados" valor={fEstado} onMudar={setFEstado}
+                     opcoes={ESTADOS.map(e => ({ v: e.v, rot: e.rot }))} />
         <label className="flex items-center gap-1.5 text-sm text-slate-600">
           <input type="checkbox" checked={semSalario} onChange={e => setSemSalario(e.target.checked)} />
           só por preencher
         </label>
+        {(fEmpresa.length + fHotel.length + fDep.length + fEstado.length > 0 || semSalario) && (
+          <button
+            className="text-sm text-slate-500 hover:text-slate-800 hover:underline"
+            onClick={() => {
+              setFEmpresa([]); setFHotel([]); setFDep([]); setFEstado([]); setSemSalario(false)
+            }}
+          >
+            limpar filtros
+          </button>
+        )}
         <div className="ml-auto flex items-center gap-2">
           {saving > 0 && <span className="flex items-center gap-1 text-sm text-slate-500"><Spinner /> a guardar</span>}
           <button className="btn-primary" onClick={() => setNovo(true)}>Nova pessoa</button>
