@@ -4,14 +4,14 @@ import { useAuth } from '../lib/auth'
 import { useApp } from '../lib/appState'
 import {
   countRowsIn, createPeriodAt, deletePeriod, fetchCounts, fetchItems, fetchLastPeriod,
-  fetchPeriods, fetchPreviousClosing, fetchReceivedInPeriod, updatePeriod, upsertCount,
+  fetchPeriods, fetchPreviousClosing, fetchReceivedInPeriod, fetchStock, updatePeriod, upsertCount,
 } from '../lib/data'
-import type { Count, Department, Item, Period, PeriodKind } from '../lib/types'
+import type { Count, Department, Item, Period, PeriodKind, StockRow } from '../lib/types'
 import { addDays, dmy, lastDayOfMonth, money, qty, todayISO } from '../lib/format'
 import { Loading, Modal, NumInput, Spinner, useToast } from '../components/ui'
 import { useLembrado } from '../lib/lembrar'
 import { supabase } from '../lib/supabase'
-import ARepor from '../components/ARepor'
+import NovaEncomenda from '../components/NovaEncomenda'
 import {
   analisar, cobertura, fetchConsumo, fetchFornecedores,
   type Consumo, type Fornecedor,
@@ -46,6 +46,19 @@ export default function ContagemPeriodica({ dept }: { dept: Department }) {
   const [fornecedores, setFornecedores] = useState<Record<string, Fornecedor>>({})
   const timers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
   const [recarregar, setRecarregar] = useState(0)
+  /**
+   * Encomendar a partir da linha da contagem. Antes havia um quadro «A repor»
+   * por baixo da tabela, com sugestões calculadas; ficava longe da linha que se
+   * estava a olhar e metade das vezes não se percebia porque sugeria o que
+   * sugeria. Agora cada linha tem o seu botão, que abre a mesma janela das
+   * Encomendas com o artigo já escolhido.
+   */
+  const [aEncomendar, setAEncomendar] = useState<string | null>(null)
+  const [stock, setStock] = useState<StockRow[]>([])
+  useEffect(() => {
+    if (!hotelId) return
+    fetchStock(hotelId, dept).then(setStock).catch(() => setStock([]))
+  }, [hotelId, dept, recarregar])
   const rowsRef = useRef<Record<string, Row>>({})
   rowsRef.current = rows
 
@@ -485,6 +498,7 @@ export default function ContagemPeriodica({ dept }: { dept: Department }) {
                   <th className="th text-right">Utilizado</th>
                   <th className="th text-right">Custo</th>
                   <th className="th text-right">€/quarto</th>
+                  {editable && <th className="th" aria-label="Encomendar" />}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -551,6 +565,17 @@ export default function ContagemPeriodica({ dept }: { dept: Department }) {
                       <td className="td text-right tabular-nums">
                         {rooms && cost != null ? money(cost / rooms) : '—'}
                       </td>
+                      {editable && (
+                        <td className="td w-px whitespace-nowrap text-right">
+                          <button
+                            className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600 hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700"
+                            onClick={() => setAEncomendar(r.item_id)}
+                            title={`Encomendar ${r.item.name}`}
+                          >
+                            Encomendar
+                          </button>
+                        </td>
+                      )}
                     </tr>
                   )
                 })}
@@ -565,14 +590,16 @@ export default function ContagemPeriodica({ dept }: { dept: Department }) {
             </p>
           )}
 
-          {hotelId && (
-            <ARepor
-              dept={dept}
+          {hotelId && aEncomendar && (
+            <NovaEncomenda
               hotelId={hotelId}
-              editavel={editable}
-              itens={items}
               email={email}
-              aoEncomendar={() => setRecarregar(n => n + 1)}
+              stock={stock}
+              itemInicial={aEncomendar}
+              fornecedorDe={id => items.find(i => i.id === id)?.supplier ?? null}
+              fornecedores={Object.keys(fornecedores)}
+              onFechar={() => setAEncomendar(null)}
+              onGravada={() => { setAEncomendar(null); setRecarregar(n => n + 1) }}
             />
           )}
         </>

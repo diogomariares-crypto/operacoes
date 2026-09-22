@@ -2,10 +2,11 @@ import { useEffect, useMemo, useState } from 'react'
 import { useApp } from '../lib/appState'
 import { useAuth } from '../lib/auth'
 import {
-  createPurchase, deletePurchase, fetchPurchases, fetchStock, receivePurchase,
+  deletePurchase, fetchPurchases, fetchStock, receivePurchase,
 } from '../lib/data'
 import type { Department, Purchase, StockRow } from '../lib/types'
 import { DEPARTMENTS } from '../lib/types'
+import NovaEncomenda from '../components/NovaEncomenda'
 import { dmy, downloadCSV, money, qty, todayISO } from '../lib/format'
 import { Empty, Loading, Modal, NumInput, Spinner, useToast } from '../components/ui'
 import {
@@ -26,7 +27,7 @@ export default function Encomendas() {
   const [loading, setLoading] = useState(true)
   const [aba, setAba] = useState<'pendentes' | 'historico' | 'fornecedores'>('pendentes')
   const [fornecedores, setFornecedores] = useState<Record<string, Fornecedor>>({})
-  const [nova, setNova] = useState<{ item?: StockRow; qty: number; valor: number; data: string; fornecedor: string; nota: string } | null>(null)
+  const [nova, setNova] = useState(false)
   const [receber, setReceber] = useState<{ p: PurchaseRow; data: string; qty: number } | null>(null)
 
   const editavel = canWrite(dept)
@@ -50,26 +51,6 @@ export default function Encomendas() {
   const pendentes = useMemo(() => compras.filter(c => !c.received_date), [compras])
   const recebidas = useMemo(() => compras.filter(c => c.received_date), [compras])
 
-
-  const guardarEncomenda = async () => {
-    if (!nova?.item || !hotelId) return
-    if (nova.qty <= 0) { toast('Indica uma quantidade', 'erro'); return }
-    try {
-      await createPurchase({
-        hotel_id: hotelId,
-        item_id: nova.item.item_id,
-        qty: nova.qty,
-        amount_paid_eur: nova.valor,
-        order_date: nova.data,
-        supplier: nova.fornecedor.trim() || null,
-        note: nova.nota.trim() || null,
-        created_by: email,
-      })
-      toast('Encomenda registada')
-      setNova(null)
-      carregar()
-    } catch (e) { toast((e as Error).message, 'erro') }
-  }
 
   const marcarRecebida = async () => {
     if (!receber) return
@@ -110,7 +91,7 @@ export default function Encomendas() {
               c.supplier, c.order_date, c.received_date, c.note]),
           ])} disabled={!compras.length}>Exportar</button>
           <button className="btn-primary" disabled={!editavel}
-                  onClick={() => setNova({ qty: 0, valor: 0, data: todayISO(), fornecedor: '', nota: '' })}>
+                  onClick={() => setNova(true)}>
             + Encomenda
           </button>
         </div>
@@ -236,68 +217,19 @@ export default function Encomendas() {
       </p>
 
       {/* ------------------------------- Modais ------------------------------- */}
-      <Modal open={!!nova} onClose={() => setNova(null)} title="Nova encomenda">
-        {nova && (
-          <div className="space-y-3">
-            <div>
-              <label className="label">Item *</label>
-              <select
-                className="input"
-                value={nova.item?.item_id ?? ''}
-                onChange={e => {
-                  const it = stock.find(s => s.item_id === e.target.value)
-                  setNova({ ...nova, item: it, valor: (nova.qty || 0) * Number(it?.unit_price_eur ?? 0) })
-                }}
-              >
-                <option value="">— escolher —</option>
-                {stock.map(s => <option key={s.item_id} value={s.item_id}>{s.item_name}</option>)}
-              </select>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-3">
-              <div>
-                <label className="label">Quantidade *</label>
-                <NumInput value={nova.qty} onChange={n => setNova({
-                  ...nova, qty: n,
-                  valor: nova.item?.unit_price_eur != null
-                    ? Number((n * Number(nova.item.unit_price_eur)).toFixed(2)) : nova.valor,
-                })} />
-              </div>
-              <div>
-                <label className="label">Valor total (€)</label>
-                <NumInput value={nova.valor} onChange={n => setNova({ ...nova, valor: n })} />
-              </div>
-              <div>
-                <label className="label">Data da encomenda</label>
-                <input type="date" className="input" value={nova.data}
-                       onChange={e => setNova({ ...nova, data: e.target.value })} />
-              </div>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div>
-                <label className="label">Fornecedor</label>
-                <input className="input" value={nova.fornecedor}
-                       onChange={e => setNova({ ...nova, fornecedor: e.target.value })} />
-              </div>
-              <div>
-                <label className="label">Nota</label>
-                <input className="input" value={nova.nota}
-                       onChange={e => setNova({ ...nova, nota: e.target.value })} />
-              </div>
-            </div>
-            {nova.item && (
-              <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
-                Stock atual: {qty(nova.item.stock_atual)} {nova.item.unit}
-                {nova.item.par_qty != null && ` · par: ${qty(nova.item.par_qty)}`}
-                {nova.item.por_chegar > 0 && ` · já por chegar: ${qty(nova.item.por_chegar)}`}
-              </p>
-            )}
-            <div className="flex justify-end gap-2 pt-1">
-              <button className="btn-ghost" onClick={() => setNova(null)}>Cancelar</button>
-              <button className="btn-primary" onClick={guardarEncomenda} disabled={!nova.item}>Registar</button>
-            </div>
-          </div>
-        )}
-      </Modal>
+      {/* a mesma janela que abre na Contagem, aqui com o artigo por escolher */}
+      {nova && hotelId && (
+        <NovaEncomenda
+          hotelId={hotelId}
+          email={email}
+          stock={stock}
+          // o fornecedor habitual é o da última compra do artigo
+          fornecedorDe={id => compras.find(c => c.item_id === id && c.supplier)?.supplier ?? null}
+          fornecedores={Object.keys(fornecedores)}
+          onFechar={() => setNova(false)}
+          onGravada={() => { setNova(false); carregar() }}
+        />
+      )}
 
       <Modal open={!!receber} onClose={() => setReceber(null)} title="Registar chegada">
         {receber && (
