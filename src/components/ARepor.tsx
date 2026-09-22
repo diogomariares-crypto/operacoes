@@ -6,7 +6,7 @@ import {
   type Analise, type Consumo, type Fornecedor,
 } from '../lib/reposicao'
 import { money, qty, todayISO } from '../lib/format'
-import { Spinner, useToast } from './ui'
+import { NumInput, Spinner, useToast } from './ui'
 
 type Linha = {
   s: StockRow
@@ -286,15 +286,8 @@ function LinhaRepor({
           <div className="flex items-end gap-1.5">
             <div>
               <div className="text-[10px] uppercase tracking-wide text-slate-400">Encomendar</div>
-              <input
-                inputMode="decimal"
-                className="input w-20 px-2 py-1 text-right text-sm tabular-nums"
-                value={quantidade === 0 ? '' : String(quantidade).replace('.', ',')}
-                onChange={e => {
-                  const n = Number(e.target.value.replace(',', '.').replace(/[^0-9.]/g, ''))
-                  onQuantidade(Number.isFinite(n) ? n : 0)
-                }}
-              />
+              <NumInput className="w-20 px-2 py-1 text-sm"
+                        value={quantidade} onChange={n => onQuantidade(Math.max(0, n))} />
             </div>
             <button
               className="btn-primary px-3 py-1.5 text-sm disabled:opacity-40"
@@ -317,16 +310,13 @@ function LinhaRepor({
         <div className="mt-2 flex flex-wrap items-end gap-x-3 gap-y-2 border-t border-slate-200/70 pt-2">
           <div>
             <div className="text-[10px] uppercase tracking-wide text-slate-400">Valor total €</div>
-            <input
-              inputMode="decimal"
-              className="input w-24 px-2 py-1 text-right text-sm tabular-nums"
-              placeholder="0,00"
-              value={valor === 0 ? '' : String(valor).replace('.', ',')}
-              onChange={e => {
-                const n = Number(e.target.value.replace(',', '.').replace(/[^0-9.]/g, ''))
-                onValor(Number.isFinite(n) ? n : 0)
-              }}
-            />
+            {/*
+              NumInput e não um input simples: este reconvertia o texto em
+              número a cada tecla, e «1,» virava 1 — a vírgula desaparecia antes
+              de se conseguir escrever a casa decimal.
+            */}
+            <NumInput className="w-24 px-2 py-1 text-sm" placeholder="0,00"
+                      value={valor} onChange={n => onValor(Math.max(0, n))} />
           </div>
 
           <div className="min-w-[150px] flex-1">

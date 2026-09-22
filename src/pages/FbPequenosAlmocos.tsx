@@ -461,6 +461,9 @@ function Opcional({ rot, valor, auto, onChange }: {
   rot: string; valor: number | null; auto?: number | null
   onChange: (v: number | null) => void
 }) {
+  // o texto fica como se escreveu enquanto se escreve: reconverter a cada tecla
+  // transformava «1,» em 1 e comia a vírgula antes da casa decimal
+  const [txt, setTxt] = useState<string | null>(null)
   return (
     <div>
       <label className="label">{rot}</label>
@@ -468,13 +471,15 @@ function Opcional({ rot, valor, auto, onChange }: {
         className="input text-right tabular-nums"
         inputMode="decimal"
         placeholder={auto == null ? 'auto' : String(auto)}
-        value={valor == null ? '' : String(valor).replace('.', ',')}
+        value={txt ?? (valor == null ? '' : String(valor).replace('.', ','))}
         onChange={e => {
-          const t = e.target.value.trim()
-          if (t === '') return onChange(null)
+          const t = e.target.value.replace(/[^0-9,.\-]/g, '')
+          setTxt(t)
+          if (t.trim() === '') return onChange(null)
           const n = Number(t.replace(',', '.'))
           if (!Number.isNaN(n)) onChange(n)
         }}
+        onBlur={() => setTxt(null)}
       />
     </div>
   )
