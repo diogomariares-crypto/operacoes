@@ -513,7 +513,11 @@ function LinhaSaida({
             </option>
           ))}
       </select>
-      <span className="shrink-0 text-sm font-semibold tabular-nums text-slate-800">
+      {s.valor < 0 && (
+        <span className="chip shrink-0 bg-emerald-50 text-emerald-700">nota de crédito</span>
+      )}
+      <span className={`shrink-0 text-sm font-semibold tabular-nums ${
+        s.valor < 0 ? 'text-emerald-700' : 'text-slate-800'}`}>
         {money(s.valor)}
       </span>
       {s.ficheiro ? (
@@ -585,12 +589,17 @@ function NovaSaida({
       <div className="sm:col-span-2">
         <label className="label">Valor</label>
         <NumInput className="h-9 text-sm" value={s.valor}
+                  title="Negativo numa nota de crédito — dinheiro que volta à caixa"
                   onChange={n => setS({ ...s, valor: n })} />
+        <p className="mt-0.5 text-[11px] text-slate-400">
+          negativo = nota de crédito
+        </p>
       </div>
       <div className="flex items-end">
         <button
           className="btn-primary h-9 w-full text-sm"
-          disabled={s.valor <= 0}
+          // negativo é nota de crédito — dinheiro que volta à caixa
+          disabled={s.valor === 0}
           onClick={async () => {
             await onJuntar({
               dia: s.dia,
@@ -702,6 +711,12 @@ function ColarFaturas({
           {linhas.length
             ? <><strong>{linhas.length} faturas</strong> reconhecidas · {money(total)}</>
             : 'ainda nada reconhecido'}
+          {/* o sinal conta: uma nota de crédito devolve dinheiro à caixa */}
+          {linhas.filter(l => l.valor < 0).length > 0 && (
+            <span className="ml-1 text-emerald-700">
+              · {linhas.filter(l => l.valor < 0).length} com valor negativo (notas de crédito)
+            </span>
+          )}
         </span>
         <button className="btn-primary ml-auto" disabled={!linhas.length}
                 onClick={() => onGravar(linhas)}>
@@ -1067,7 +1082,7 @@ function Depositos({
         <NumInput className="h-9 w-24 text-sm" value={valor} onChange={setValor} />
         <input className="input h-9 w-32 text-sm" placeholder="referência" value={ref}
                onChange={e => setRef(e.target.value)} />
-        <button className="btn-ghost shrink-0" disabled={valor <= 0}
+        <button className="btn-ghost shrink-0" disabled={valor === 0}
                 onClick={async () => {
                   await onJuntar({ dia, valor, referencia: ref.trim() || null })
                   setValor(0); setRef('')
@@ -1191,7 +1206,7 @@ function Recebimentos({
             <input className="input h-9 text-sm" value={nota}
                    onChange={e => setNota(e.target.value)} />
           </div>
-          <button className="btn-primary shrink-0" disabled={valor <= 0}
+          <button className="btn-primary shrink-0" disabled={valor === 0}
                   onClick={async () => {
                     await onJuntarManual(dia, valor, nota.trim() || null)
                     setValor(0); setNota('')

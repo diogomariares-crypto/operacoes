@@ -636,6 +636,9 @@ export function lerColagem(texto: string): Omit<Saida, 'id' | 'ficheiro' | 'enve
     const bruto = em('valor', c.length - 1) ?? c[c.length - 1]
     const valor = Number(String(bruto).replace(/[^0-9,.-]/g, '').replace(',', '.'))
     if (!dia || !Number.isFinite(valor) || valor === 0) continue
+    // o sinal fica como vem: um valor negativo é uma nota de crédito, dinheiro
+    // que volta à caixa. Antes tomava-se o valor absoluto, e uma nota de
+    // crédito de 50 EUR entrava como uma despesa de 50 EUR — 100 EUR de erro.
 
     // sem cabeçalho e só com 4 colunas, a do meio é o nº do documento
     const curto = !mapa && c.length < 5
@@ -645,7 +648,7 @@ export function lerColagem(texto: string): Omit<Saida, 'id' | 'ficheiro' | 'enve
       fornecedor: (em('fornecedor', 1) || null) ?? null,
       descricao: curto ? null : (em('descricao', 2) || null) ?? null,
       documento: (curto ? c[2] : em('documento', 3)) || null,
-      valor: Math.round(Math.abs(valor) * 100) / 100,
+      valor: Math.round(valor * 100) / 100,
     })
   }
   return fora
