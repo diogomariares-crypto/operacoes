@@ -552,6 +552,21 @@ export async function juntarDeposito(caixaId: string, d: Omit<Deposito, 'id'>) {
   if (error) throw error
 }
 
+/**
+ * Apaga várias linhas de uma vez.
+ *
+ * Um relatório mal importado traz dezenas de pagamentos errados, e apagá-los um
+ * a um não é trabalho que se peça a ninguém.
+ */
+export async function apagarVarios(
+  tabela: 'cx_saidas' | 'cx_envelopes' | 'cx_depositos' | 'cx_recebido',
+  ids: string[],
+) {
+  if (!ids.length) return
+  const { error } = await supabase.from(tabela).delete().in('id', ids)
+  if (error) throw error
+}
+
 export async function apagar(tabela: 'cx_saidas' | 'cx_envelopes' | 'cx_depositos' | 'cx_recebido',
                              id: string) {
   const { error } = await supabase.from(tabela).delete().eq('id', id)

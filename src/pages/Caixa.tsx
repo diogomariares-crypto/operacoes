@@ -4,7 +4,7 @@ import { useAuth } from '../lib/auth'
 import {
   DENOMINACOES, apagar, apagarFicheiro, balanco, contasDoEnvelope, estaCerto, ehNota,
   fetchCaixas, fetchMes, guardarEnvelope, guardarFicheiro, guardarSaida, importarRecebido,
-  juntarDeposito, juntarEnvelope, juntarRecebidoManual, juntarSaida, juntarSaidas,
+  apagarVarios, juntarDeposito, juntarEnvelope, juntarRecebidoManual, juntarSaida, juntarSaidas,
   lerColagem,
   instante, lerRelatorioPms, linkDaFatura, recebidoDoTurno, somaDenominacoes, TOLERANCIA,
   descreveDiferenca, veredicto,
@@ -14,6 +14,8 @@ import {
 import { dmy, lastDayOfMonth, money, todayISO } from '../lib/format'
 import { Loading, Modal, NumInput, Spinner, StatCard, useToast } from '../components/ui'
 import { ehMes, mesCorrente, useLembrado } from '../lib/lembrar'
+import { useSeleccao } from '../lib/seleccao'
+import { Caixa as CaixaEscolha } from '../components/BulkEdit'
 
 type Dados = {
   recebido: Recebido[]; saidas: Saida[]; envelopes: Envelope[]
@@ -295,6 +297,7 @@ export default function CaixaPage() {
           await juntarRecebidoManual(caixaId, dia, valor, nota); carregar()
         }}
         onApagar={async id => { await apagar('cx_recebido', id); carregar() }}
+        onApagarVarios={async ids => { await apagarVarios('cx_recebido', ids); carregar() }}
       />
 
       {aEditar && (
@@ -1077,7 +1080,7 @@ function Depositos({
 /* --------------------------------------------------------------- recebido */
 
 function Recebimentos({
-  caixa, recebido, total, onImportado, onJuntarManual, onApagar,
+  caixa, recebido, total, onImportado, onJuntarManual, onApagar, onApagarVarios,
 }: {
   caixa: Caixa
   recebido: Recebido[]
@@ -1085,8 +1088,16 @@ function Recebimentos({
   onImportado: () => void
   onJuntarManual: (dia: string, valor: number, nota: string | null) => Promise<void>
   onApagar: (id: string) => Promise<void>
+  onApagarVarios: (ids: string[]) => Promise<void>
 }) {
   const toast = useToast()
+  /**
+   * Escolher várias linhas para as apagar de uma vez. Um relatório importado da
+   * caixa errada, ou do mês errado, traz dezenas de linhas — uma a uma não é
+   * trabalho que se peça a ninguém.
+   */
+  const sel = useSeleccao(recebido.map(r => r.id))
+  const [aApagar, setAApagar] = useState(false)
   const [aLer, setALer] = useState(false)
   const [sobre, setSobre] = useState(false)
   const [aberto, setAberto] = useState(false)
@@ -1200,37 +1211,93 @@ function Recebimentos({
       )}
 
       {aberto && (
-        <div className="mt-3 max-h-[280px] overflow-y-auto rounded-lg border border-slate-200">
-          <table className="w-full text-sm">
-            <thead className="sticky top-0 bg-slate-50">
-              <tr className="text-left text-[11px] uppercase tracking-wide text-slate-500">
-                <th className="th">Quando</th>
-                <th className="th">Cliente</th>
-                <th className="th">Quem recebeu</th>
-                <th className="th">Conta</th>
-                <th className="th text-right">Valor</th>
-                <th className="th"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {recebido.map(r => (
-                <tr key={r.id} className="border-t border-slate-100">
-                  <td className="td whitespace-nowrap tabular-nums text-slate-500">
-                    {dmy(r.dia)}{r.momento && ` ${horaDe(r.momento)}`}
-                  </td>
-                  <td className="td">{r.cliente || '—'}</td>
-                  <td className="td text-slate-500">{r.criador || '—'}</td>
-                  <td className="td text-slate-400">{r.documento || '—'}</td>
-                  <td className="td text-right tabular-nums">{money(r.valor)}</td>
-                  <td className="td text-right">
-                    <button className="text-slate-400 hover:text-red-600"
-                            onClick={() => onApagar(r.id)}>✕</button>
-                  </td>
+        <>
+          {sel.n > 0 && (
+            <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg bg-slate-100 px-3 py-2 text-sm">
+              <span className="font-medium text-slate-700">
+                {sel.n} {sel.n === 1 ? 'pagamento escolhido' : 'pagamentos escolhidos'}
+                {' · '}
+                <span className="tabular-nums">
+                  {money(recebido.filter(r => sel.tem(r.id)).reduce((t, r) => t + r.valor, 0))}
+                </span>
+              </span>
+              <button className="text-slate-500 hover:underline" onClick={sel.nenhum}>
+                limpar
+              </button>
+              <button
+                className="btn-danger ml-auto px-3 py-1.5 text-sm"
+                disabled={aApagar}
+                onClick={async () => {
+                  const ids = sel.escolhidos()
+                  const soma = recebido.filter(r => ids.includes(r.id))
+                    .reduce((t, r) => t + r.valor, 0)
+                  if (!confirm(
+                    `Apagar ${ids.length} ${ids.length === 1 ? 'pagamento' : 'pagamentos'}`
+                    + ` no valor de ${money(soma)}? Isto não se desfaz — se vieram do`
+                    + ' relatório, voltam a entrar se o largares outra vez.')) return
+                  setAApagar(true)
+                  try {
+                    await onApagarVarios(ids)
+                    sel.nenhum()
+                    toast(`${ids.length} ${ids.length === 1 ? 'pagamento apagado' : 'pagamentos apagados'}`)
+                  } catch (e) {
+                    toast((e as Error).message, 'erro')
+                  } finally { setAApagar(false) }
+                }}
+              >
+                {aApagar ? 'A apagar…' : 'Apagar escolhidos'}
+              </button>
+            </div>
+          )}
+
+          <div className="mt-3 max-h-[280px] overflow-y-auto rounded-lg border border-slate-200">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 bg-slate-50">
+                <tr className="text-left text-[11px] uppercase tracking-wide text-slate-500">
+                  <th className="th w-8">
+                    <CaixaEscolha
+                      ligada={sel.n > 0 && sel.n === recebido.length}
+                      titulo="escolher todos"
+                      onAlternar={() => (sel.n === recebido.length ? sel.nenhum() : sel.todos())}
+                    />
+                  </th>
+                  <th className="th">Quando</th>
+                  <th className="th">Cliente</th>
+                  <th className="th">Quem recebeu</th>
+                  <th className="th">Conta</th>
+                  <th className="th text-right">Valor</th>
+                  <th className="th"></th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {recebido.map(r => (
+                  <tr key={r.id} className={`border-t border-slate-100 ${
+                    sel.tem(r.id) ? 'bg-brand-50/60' : ''}`}>
+                    <td className="td w-8">
+                      <CaixaEscolha ligada={sel.tem(r.id)}
+                                    onAlternar={comShift => sel.alternar(r.id, comShift)} />
+                    </td>
+                    <td className="td whitespace-nowrap tabular-nums text-slate-500">
+                      {dmy(r.dia)}{r.momento && ` ${horaDe(r.momento)}`}
+                    </td>
+                    <td className="td">{r.cliente || '—'}</td>
+                    <td className="td text-slate-500">{r.criador || '—'}</td>
+                    <td className="td text-slate-400">{r.documento || '—'}</td>
+                    <td className="td text-right tabular-nums">{money(r.valor)}</td>
+                    <td className="td text-right">
+                      <button className="text-slate-400 hover:text-red-600"
+                              title="Apagar este"
+                              onClick={() => onApagar(r.id)}>✕</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="mt-1.5 text-xs text-slate-400">
+            Escolhe com as caixas à esquerda — o shift-clique apanha o intervalo todo.
+          </p>
+        </>
       )}
 
       <p className="mt-2 text-xs text-slate-400">
