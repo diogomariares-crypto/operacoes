@@ -126,9 +126,17 @@ export function TextoAuto({
   )
 }
 
-/** Input numérico tolerante a vírgula decimal (pt-PT). */
+/**
+ * Input numérico tolerante a vírgula decimal (pt-PT).
+ *
+ * O `onBlur` e o `onFocus` de quem chama são chamados a seguir aos nossos, e
+ * não em vez deles. Estavam escritos depois do `{...rest}`, o que os
+ * substituía em silêncio: quem passasse um `onBlur` para gravar ficava sem
+ * gravação nenhuma, e sem erro nenhum a dizê-lo. Foi assim que os quartos, as
+ * tarifas e o pax dos grupos deixaram de ser gravados.
+ */
 export function NumInput({
-  value, onChange, className = '', ...rest
+  value, onChange, className = '', onBlur, onFocus, ...rest
 }: {
   value: number
   onChange: (n: number) => void
@@ -142,7 +150,7 @@ export function NumInput({
       inputMode="decimal"
       className={`input text-right tabular-nums ${className}`}
       value={shown}
-      onFocus={e => e.currentTarget.select()}
+      onFocus={e => { e.currentTarget.select(); onFocus?.(e) }}
       onChange={e => {
         const raw = e.target.value.replace(/[^0-9,.\-]/g, '')
         setTxt(raw)
@@ -150,7 +158,7 @@ export function NumInput({
         if (raw === '' || raw === '-') onChange(0)
         else if (!Number.isNaN(n)) onChange(n)
       }}
-      onBlur={() => setTxt(null)}
+      onBlur={e => { setTxt(null); onBlur?.(e) }}
     />
   )
 }

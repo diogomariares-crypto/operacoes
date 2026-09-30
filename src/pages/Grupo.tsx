@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
 import { Loading, Modal, NumInput, useToast } from '../components/ui'
@@ -76,10 +76,28 @@ export default function GrupoFicha() {
   const mudarLinha = (id: string, patch: Partial<Linha>) =>
     setLinhas(ls => ls.map(l => (l.id === id ? { ...l, ...patch } : l)))
 
+  /**
+   * Gravações em curso.
+   *
+   * Cada campo grava ao sair dele, o que é assíncrono. Se se carregar em
+   * «repetir» no instante seguinte, a leitura de volta pode chegar antes da
+   * gravação e o ecrã volta a mostrar o valor antigo — parece que o que se
+   * escreveu desapareceu. Por isso espera-se por elas antes de copiar.
+   */
+  const emCurso = useRef<Promise<unknown>[]>([])
+  const esperarGravacoes = async () => {
+    if (!emCurso.current.length) return
+    const p = emCurso.current
+    emCurso.current = []
+    await Promise.allSettled(p)
+  }
+
   const gravarLinhaAgora = async (id: string, patch: Partial<Linha>) => {
     if (!podeEscrever) return
     mudarLinha(id, patch)
-    try { await guardarLinha(id, patch) } catch (e) { toast(mensagemDeErro(e), 'erro') }
+    const p = guardarLinha(id, patch).catch(e => toast(mensagemDeErro(e), 'erro'))
+    emCurso.current.push(p)
+    await p
   }
 
   const juntarLinha = async (data: string, molde?: Linha) => {
@@ -117,6 +135,7 @@ export default function GrupoFicha() {
       'O que estiver lançado nessas noites é substituído.',
     )) return
     try {
+      await esperarGravacoes()
       await copiarNoite(grupo, linhas, data)
       setLinhas(await fetchLinhas(grupo.id))
       toast(`Composição de ${dataCurta(data)} aplicada a ${outras} noite(s)`)
@@ -324,31 +343,47 @@ export default function GrupoFicha() {
                   <td className="td text-right text-xs tabular-nums text-slate-500">
                     {n.valor ? euros(n.valor) : '—'}
                   </td>
+                  {/*
+                    Acrescentar uma linha é a acção principal deste quadro, e
+                    estava escrita em letra pequena ao lado de outra — passa a
+                    botão com moldura, que se vê e se acerta com o dedo.
+                  */}
                   <td className="td whitespace-nowrap text-right">
                     {podeEscrever && (
-                      <>
-                        <button className="text-xs text-brand-700 hover:underline"
-                                onClick={() => juntarLinha(n.data, n.linhas[n.linhas.length - 1])}>
-                          + linha
-                        </button>
+                      <span className="inline-flex items-center gap-2">
                         {n.linhas.length > 0 && t.noites > 1 && (
-                          <button className="ml-3 text-xs text-slate-500 hover:underline"
-                                  title="Copiar esta composição para as outras noites"
-                                  onClick={() => repetirNoite(n.data)}>
-                            repetir
+                          <button
+                            className="rounded-lg px-2 py-1.5 text-xs font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+                            title="Copiar esta composição para as outras noites do grupo"
+                            onClick={() => repetirNoite(n.data)}
+                          >
+                            Repetir nas outras
                           </button>
                         )}
-                      </>
+                        <button
+                          className="rounded-lg border border-brand-300 bg-brand-50 px-2.5 py-1.5 text-xs font-semibold text-brand-800 hover:border-brand-500 hover:bg-brand-100"
+                          onClick={() => juntarLinha(n.data, n.linhas[n.linhas.length - 1])}
+                        >
+                          + Linha
+                        </button>
+                      </span>
                     )}
                   </td>
                 </tr>
 
                 {n.linhas.length === 0 ? (
                   <tr className="border-b border-slate-100">
-                    <td className="td text-sm text-slate-400" colSpan={6}>
-                      {podeEscrever
-                        ? 'Nada lançado nesta noite — «+ linha» acrescenta a primeira.'
-                        : 'Nada lançado nesta noite.'}
+                    <td className="td" colSpan={6}>
+                      {podeEscrever ? (
+                        <button
+                          className="w-full rounded-lg border border-dashed border-brand-300 bg-brand-50/40 px-3 py-2.5 text-left text-sm font-medium text-brand-800 hover:border-brand-500 hover:bg-brand-50"
+                          onClick={() => juntarLinha(n.data)}
+                        >
+                          + Acrescentar a primeira linha desta noite
+                        </button>
+                      ) : (
+                        <span className="text-sm text-slate-400">Nada lançado nesta noite.</span>
+                      )}
                     </td>
                   </tr>
                 ) : n.linhas.map(l => {
