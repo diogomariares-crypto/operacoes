@@ -76,6 +76,14 @@ export const MODULOS: Modulo[] = [
     ],
   },
   {
+    id: 'horarios',
+    label: 'Horários',
+    icone: '◷',
+    paginas: [
+      { to: '/horarios', label: 'Horários' },
+    ],
+  },
+  {
     id: 'parque',
     label: 'Parque',
     icone: '⬓',
