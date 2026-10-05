@@ -8,6 +8,8 @@ import {
   ESTADOS, PAGAMENTOS, SECCOES, TIPOLOGIAS,
   apagarGrupo, apagarLinha, apagarQuarto, composicao, copiarNoite, criarLinha,
   dataCurta, dataLonga, diaSemana, euros, fetchGrupo, fetchLinhas, fetchNotas,
+  type GrupoImagem,
+  carregarImagemGrupo, fetchImagens, removerImagemGrupo, urlImagem,
   fetchQuartos, guardarGrupo, guardarLinha, guardarNota, lerRooming,
   limparLinhasFora, mensagemDeErro, noites, noitesDoGrupo, paxDaLinha,
   paxDaTipologia, somaDias, substituirQuartos, tipologiaLabel, totais, valorDaLinha,
@@ -40,6 +42,12 @@ export default function GrupoFicha() {
   const [editar, setEditar] = useState<Partial<GrupoNovo> | null>(null)
   const [aColar, setAColar] = useState<string | null>(null)
   const [aGuardar, setAGuardar] = useState(false)
+  const [imagens, setImagens] = useState<GrupoImagem[]>([])
+  // o balde é privado, por isso cada imagem precisa do seu endereço temporário
+  const [urls, setUrls] = useState<Record<string, string>>({})
+  const [aEnviar, setAEnviar] = useState(false)
+  const [aVer, setAVer] = useState<GrupoImagem | null>(null)
+  const ficheiro = useRef<HTMLInputElement>(null)
 
   const carregar = async () => {
     if (!id) return
@@ -56,6 +64,7 @@ export default function GrupoFicha() {
       }
       setNotas(await fetchNotas(id))
       setQuartos(await fetchQuartos(id))
+      setImagens(await fetchImagens(id))
     } catch (e) {
       toast(mensagemDeErro(e), 'erro')
     } finally {
@@ -64,6 +73,53 @@ export default function GrupoFicha() {
   }
 
   useEffect(() => { carregar() }, [id])
+
+  // Os endereços assinados expiram, por isso pedem-se quando a lista muda e não
+  // são guardados em lado nenhum.
+  useEffect(() => {
+    let vivo = true
+    const porResolver = imagens.filter(i => !urls[i.storage_path])
+    if (porResolver.length === 0) return
+    Promise.all(porResolver.map(async i => [i.storage_path, await urlImagem(i.storage_path)] as const))
+      .then(pares => {
+        if (!vivo) return
+        setUrls(u => {
+          const novo = { ...u }
+          for (const [caminho, url] of pares) if (url) novo[caminho] = url
+          return novo
+        })
+      })
+    return () => { vivo = false }
+  }, [imagens, urls])
+
+  const enviarImagens = async (lista: FileList | null) => {
+    if (!lista?.length || !id) return
+    setAEnviar(true)
+    try {
+      for (const f of Array.from(lista)) {
+        if (!f.type.startsWith('image/')) {
+          toast(`${f.name} não é uma imagem`, 'erro')
+          continue
+        }
+        const img = await carregarImagemGrupo(id, f, email)
+        setImagens(xs => [...xs, img])
+      }
+    } catch (e) {
+      toast(mensagemDeErro(e), 'erro')
+    } finally {
+      setAEnviar(false)
+      if (ficheiro.current) ficheiro.current.value = ''
+    }
+  }
+
+  const apagarImagem = async (img: GrupoImagem) => {
+    if (!confirm('Apagar esta imagem? Não há forma de a recuperar.')) return
+    try {
+      await removerImagemGrupo(img)
+      setImagens(xs => xs.filter(x => x.id !== img.id))
+      setAVer(null)
+    } catch (e) { toast(mensagemDeErro(e), 'erro') }
+  }
 
   const noitesG = useMemo(
     () => (grupo ? noitesDoGrupo(grupo, linhas) : []),
@@ -620,6 +676,97 @@ export default function GrupoFicha() {
           </div>
         )}
       </section>
+
+      {/* imagens do grupo — tipicamente a rooming list fotografada */}
+      <section className="space-y-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold">
+            Imagens{imagens.length > 0 && ` · ${imagens.length}`}
+          </h2>
+          {podeEscrever && (
+            <>
+              {/* No telemóvel isto abre a câmara ou a galeria; no computador, os
+                  ficheiros. É o caminho rápido para a rooming list: fotografa-se
+                  o ecrã do PMS em vez de se copiar linha a linha. */}
+              <input
+                ref={ficheiro} type="file" accept="image/*" multiple className="hidden"
+                onChange={e => enviarImagens(e.target.files)}
+              />
+              <button
+                className="btn-ghost" disabled={aEnviar}
+                onClick={() => ficheiro.current?.click()}
+              >
+                {aEnviar ? 'A enviar…' : 'Juntar fotografia'}
+              </button>
+            </>
+          )}
+        </div>
+
+        {imagens.length === 0 ? (
+          <div className="card px-4 py-6 text-sm text-slate-500">
+            {podeEscrever
+              ? 'Fotografa a rooming list do PMS e junta-a aqui — fica com o grupo, tal como veio.'
+              : 'Ainda sem imagens.'}
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+            {imagens.map(img => (
+              <div key={img.id} className="card group relative overflow-hidden">
+                <button
+                  type="button" onClick={() => setAVer(img)}
+                  className="block w-full"
+                  title="Ver maior"
+                >
+                  {urls[img.storage_path] ? (
+                    <img
+                      src={urls[img.storage_path]} alt="Imagem do grupo"
+                      className="h-36 w-full bg-slate-50 object-cover"
+                    />
+                  ) : (
+                    <div className="h-36 w-full animate-pulse bg-slate-100" />
+                  )}
+                </button>
+                {podeEscrever && (
+                  <button
+                    type="button" onClick={() => apagarImagem(img)}
+                    aria-label="Apagar imagem"
+                    className="absolute right-1.5 top-1.5 grid h-7 w-7 place-items-center rounded-lg
+                               bg-white/90 text-slate-500 shadow-sm hover:text-red-600"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* ver imagem em grande */}
+      <Modal open={!!aVer} onClose={() => setAVer(null)} title="Imagem do grupo" wide>
+        {aVer && (
+          <div className="space-y-3">
+            {urls[aVer.storage_path] && (
+              <img
+                src={urls[aVer.storage_path]} alt="Imagem do grupo"
+                className="max-h-[70vh] w-full rounded-lg object-contain"
+              />
+            )}
+            <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+              <span>
+                juntada a {dataCurta(aVer.created_at.slice(0, 10))}
+                {aVer.created_by && ` por ${aVer.created_by}`}
+              </span>
+              {urls[aVer.storage_path] && (
+                <a className="btn-ghost" href={urls[aVer.storage_path]}
+                   target="_blank" rel="noreferrer">
+                  Abrir no tamanho original
+                </a>
+              )}
+            </div>
+          </div>
+        )}
+      </Modal>
 
       {podeEscrever && (
         <div className="flex justify-end border-t border-slate-200 pt-4">

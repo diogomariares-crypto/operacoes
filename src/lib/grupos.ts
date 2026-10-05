@@ -435,22 +435,105 @@ export interface LinhaColada { quarto: string; hospede: string | null }
  */
 export function lerRooming(texto: string): LinhaColada[] {
   const out: LinhaColada[] = []
+  // O último quarto visto. As listas do PMS escrevem o número do quarto só na
+  // primeira linha e deixam os restantes hóspedes do mesmo quarto sem número —
+  // sem isto, o segundo hóspede de cada quarto duplo desaparecia em silêncio,
+  // que é o pior defeito possível numa rooming list.
+  let ultimo: string | null = null
+
   for (const bruta of texto.split(/\r?\n/)) {
     const linha = bruta.trim()
     if (!linha) continue
-    if (/^(space|customer|quarto|room|guests?|hóspede|hospede|nome|name)\b/i.test(linha)) continue
+    if (/^(space|customer|quarto|room|guests?|hóspede|hospede|nome|name|close|fechar)\b/i.test(linha)) continue
 
     // o quarto é o primeiro pedaço, o nome é tudo o que vem depois
     const m = linha.match(/^([A-Za-z]?\d{1,4}[A-Za-z]?)\s*(?:[-–—;:,|\t]|\s)\s*(.*)$/)
     if (m) {
       const hospede = m[2].replace(/\s+/g, ' ').trim()
+      ultimo = m[1]
       out.push({ quarto: m[1], hospede: hospede || null })
       continue
     }
     // um quarto sozinho numa linha continua a ser uma linha útil
-    if (/^[A-Za-z]?\d{1,4}[A-Za-z]?$/.test(linha)) out.push({ quarto: linha, hospede: null })
+    if (/^[A-Za-z]?\d{1,4}[A-Za-z]?$/.test(linha)) {
+      ultimo = linha
+      out.push({ quarto: linha, hospede: null })
+      continue
+    }
+    // nome sem quarto à frente: é outro hóspede do quarto anterior
+    if (ultimo && /\p{L}{2,}/u.test(linha)) {
+      const anterior = out[out.length - 1]
+      // o quarto tinha ficado sem nome nenhum: este é o primeiro, não o segundo
+      if (anterior && anterior.quarto === ultimo && anterior.hospede === null) {
+        anterior.hospede = linha.replace(/\s+/g, ' ').trim()
+      } else {
+        out.push({ quarto: ultimo, hospede: linha.replace(/\s+/g, ' ').trim() })
+      }
+    }
   }
   return out
+}
+
+/* ------------------------------- imagens ------------------------------- */
+
+/**
+ * Fotografias e capturas de ecrã anexadas ao grupo — tipicamente a rooming
+ * list tal como vem do PMS.
+ *
+ * Fotografar é muito mais rápido do que copiar e colar, e a imagem continua a
+ * ser a prova do que o hotel recebeu. Segue o padrão das imagens de feedback:
+ * balde privado, o caminho guardado na linha, e um URL assinado para ver.
+ */
+export interface GrupoImagem {
+  id: string
+  grupo_id: string
+  storage_path: string
+  nota: string | null
+  created_at: string
+  created_by: string | null
+}
+
+export const BUCKET_GRUPOS = 'grupo-imagens'
+
+export async function fetchImagens(grupoId: string): Promise<GrupoImagem[]> {
+  const { data, error } = await supabase
+    .from('grupo_imagens').select('*').eq('grupo_id', grupoId)
+    .order('created_at', { ascending: true })
+  if (error) throw error
+  return (data ?? []) as GrupoImagem[]
+}
+
+/** O balde é privado: para mostrar a imagem é preciso um endereço temporário. */
+export async function urlImagem(caminho: string, segundos = 21600) {
+  const { data } = await supabase.storage.from(BUCKET_GRUPOS)
+    .createSignedUrl(caminho, segundos)
+  return data?.signedUrl ?? null
+}
+
+export async function carregarImagemGrupo(
+  grupoId: string, ficheiro: File, quem: string | null,
+): Promise<GrupoImagem> {
+  const ext = (ficheiro.name.split('.').pop() || 'png').toLowerCase()
+  const caminho = `${grupoId}/${crypto.randomUUID()}.${ext}`
+  const { error } = await supabase.storage.from(BUCKET_GRUPOS)
+    .upload(caminho, ficheiro, { contentType: ficheiro.type || 'image/png' })
+  if (error) throw new Error(error.message)
+
+  const { data, error: e2 } = await supabase.from('grupo_imagens')
+    .insert({ grupo_id: grupoId, storage_path: caminho, created_by: quem })
+    .select('*').single()
+  if (e2) {
+    // a linha não entrou: não deixar o ficheiro órfão no balde
+    await supabase.storage.from(BUCKET_GRUPOS).remove([caminho])
+    throw e2
+  }
+  return data as GrupoImagem
+}
+
+export async function removerImagemGrupo(img: GrupoImagem) {
+  await supabase.storage.from(BUCKET_GRUPOS).remove([img.storage_path])
+  const { error } = await supabase.from('grupo_imagens').delete().eq('id', img.id)
+  if (error) throw error
 }
 
 /* ------------------------------ formatar ------------------------------ */
