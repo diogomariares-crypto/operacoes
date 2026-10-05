@@ -33,24 +33,26 @@ export interface Departamento {
 export const DEPARTAMENTOS: Departamento[] = [
   // os grupos entram em todos os departamentos: é a mesma ficha, e o que muda
   // é a nota que cada um lá escreve
+  // os horários entram em todos os departamentos: são de consulta e toda a casa
+  // precisa de saber quem está de serviço
   { id: 'fo', label: 'Receção', icone: '◨', tom: 'bg-brand-50 text-brand-700',
-    desc: 'Turnos, grupos, faturação do dia, parque e contagens',
-    modulos: ['turnos', 'grupos', 'fb', 'parque', 'inventario'] },
+    desc: 'Turnos, horários, grupos, faturação do dia, parque e contagens',
+    modulos: ['turnos', 'horarios', 'grupos', 'fb', 'parque', 'inventario'] },
   { id: 'hsk', label: 'Housekeeping', icone: '⌂', tom: 'bg-blue-50 text-blue-700',
-    desc: 'Produção do mês, mapa, outsourcing, grupos e rouparia',
-    modulos: ['housekeeping', 'lavandaria', 'grupos', 'turnos', 'inventario'] },
+    desc: 'Produção do mês, mapa, outsourcing, grupos, horários e rouparia',
+    modulos: ['housekeeping', 'lavandaria', 'grupos', 'turnos', 'horarios', 'inventario'] },
   { id: 'fb', label: 'F&B', icone: '€', tom: 'bg-amber-50 text-amber-700',
-    desc: 'Faturação do dia, pequenos-almoços, grupos e stock',
-    modulos: ['fb', 'grupos', 'inventario', 'turnos'] },
+    desc: 'Faturação do dia, pequenos-almoços, grupos, horários e stock',
+    modulos: ['fb', 'grupos', 'inventario', 'turnos', 'horarios'] },
   { id: 'man', label: 'Manutenção', icone: '⬓', tom: 'bg-violet-50 text-violet-700',
-    desc: 'Mapa do parque, grupos e material de reposição',
-    modulos: ['parque', 'grupos', 'inventario'] },
+    desc: 'Mapa do parque, grupos, horários e material de reposição',
+    modulos: ['parque', 'grupos', 'inventario', 'horarios'] },
   // a direção tem mesmo de ter tudo: o cartão promete-o e é onde se vai buscar
   // o painel, a rouparia e o inventário quando é preciso olhar para o conjunto
   { id: 'dir', label: 'Direção', icone: '⛭', tom: 'bg-slate-100 text-slate-700',
     desc: 'Tudo — caixa, pessoal, custos e acessos',
-    modulos: ['turnos', 'grupos', 'fb', 'inventario', 'housekeeping', 'lavandaria',
-              'caixa', 'rh', 'parque', 'gestao'],
+    modulos: ['turnos', 'horarios', 'grupos', 'fb', 'inventario', 'housekeeping',
+              'lavandaria', 'caixa', 'rh', 'parque', 'gestao'],
     essenciais: ['caixa', 'rh', 'gestao'] },
 ]
 
