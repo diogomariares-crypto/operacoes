@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import {
   Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts'
@@ -30,8 +30,29 @@ const ABAS = [
 
 const ABA_GUARDADA = 'turno.aba'
 
+/**
+ * Em que separador vive cada secção.
+ *
+ * Quem chega de fora — do Início, por exemplo — pede uma secção pelo nome
+ * (`/turno#manutencao`) e não sabe nem tem de saber que ela está dentro de
+ * «Pendentes». Sem este mapa, o link abria a página no separador que a pessoa
+ * tinha visto por último e a secção pedida nem estava no ecrã.
+ *
+ * Os nomes são os `ancora` das secções, em src/pages/Turno.tsx. Acrescentar uma
+ * secção obriga a acrescentá-la aqui — senão o link cai no separador errado.
+ */
+const SECCAO_ABA: Record<string, string> = {
+  ocupacao: 'resumo', feedback: 'resumo',
+  vips: 'hospedes', transfers: 'hospedes', breakfast: 'hospedes',
+  pendentes: 'pendentes', relevantes: 'pendentes',
+  manutencao: 'pendentes', reclamacoes: 'pendentes',
+  fb: 'fb', 'fb-notas': 'fb',
+  chegadas: 'chegadas',
+}
+
 export default function Turno() {
   const { date } = useParams()
+  const { hash } = useLocation()
   const nav = useNavigate()
   const { hotelId, hotels } = useApp()
   const { roles, email } = useAuth()
@@ -55,6 +76,38 @@ export default function Turno() {
     () => localStorage.getItem(ABA_GUARDADA) ?? 'resumo',
   )
   const setAba = (id: string) => { localStorage.setItem(ABA_GUARDADA, id); setAbaEstado(id) }
+
+  /* ------------------------ chegar a uma secção ------------------------ */
+
+  const ancora = hash.replace(/^#/, '')
+  const barra = useRef<HTMLDivElement>(null)
+  const jaDesceu = useRef<string | null>(null)
+
+  // Primeiro o separador, que tem de existir antes de a secção poder existir.
+  // Não se guarda em localStorage: vir por link é uma visita, e não razão para
+  // trocar o separador em que a pessoa costuma trabalhar.
+  useEffect(() => {
+    const destino = SECCAO_ABA[ancora]
+    if (destino) setAbaEstado(destino)
+  }, [ancora])
+
+  // Depois a descida, e só quando os dados chegaram: antes disso a página é um
+  // «A carregar…» e a secção ainda não está no documento.
+  //
+  // A conta é feita à mão em vez de scrollIntoView porque há duas barras fixas
+  // sobrepostas — o cabeçalho da aplicação e a barra do dia — e scrollIntoView
+  // deixaria o título da secção escondido debaixo delas.
+  useEffect(() => {
+    if (!ancora || aCarregar || !dados) return
+    if (jaDesceu.current === ancora) return
+    const el = document.getElementById(ancora)
+    if (!el) return
+    jaDesceu.current = ancora
+    const tapado = (document.querySelector('header')?.offsetHeight ?? 0)
+      + (barra.current?.offsetHeight ?? 0)
+    const y = el.getBoundingClientRect().top + window.scrollY - tapado - 12
+    window.scrollTo({ top: Math.max(0, y), behavior: 'smooth' })
+  }, [ancora, aCarregar, dados, aba])
 
   const carregar = useCallback(async () => {
     if (!hotelId) return
@@ -125,6 +178,7 @@ export default function Turno() {
     <div className="space-y-4">
       {/* ---------- barra fixa: dia em que se está + separadores ---------- */}
       <div
+        ref={barra}
         className="sticky z-20 -mx-3 border-b border-slate-200 bg-[#f6f7f8]/95 px-3 pt-2 backdrop-blur sm:-mx-5 sm:px-5"
         style={{ top: 'var(--cab-h, 57px)' }}
       >
@@ -262,7 +316,7 @@ function Ocupacao({ ctx, linhas }: { ctx: Ctx; linhas: T.Occupancy[] }) {
   ]
 
   return (
-    <Seccao cor={CORES.ocupacao} titulo="Resumo / Ocupação">
+    <Seccao ancora="ocupacao" cor={CORES.ocupacao} titulo="Resumo / Ocupação">
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
         <Tabela min={560}>
           <thead>
@@ -369,7 +423,7 @@ function Feedback({
     )
 
   return (
-    <Seccao cor={CORES.feedback} titulo="Feedback dos hóspedes">
+    <Seccao ancora="feedback" cor={CORES.feedback} titulo="Feedback dos hóspedes">
       {/* largura contida: sem isto as notas afastam-se demais das categorias */}
       <div className="max-w-2xl overflow-x-auto">
       <table className="w-full" style={{ minWidth: 520 }}>
@@ -467,7 +521,7 @@ function Vips({ ctx, linhas }: { ctx: Ctx; linhas: T.Vip[] }) {
 
   return (
     <Seccao
-      cor={CORES.vips} titulo="VIPs / E Especiais"
+      ancora="vips" cor={CORES.vips} titulo="VIPs / E Especiais"
       acoes={btnAdd(() => agir(() => T.inserir('vips', {
         hotel_id: ctx.hotelId, report_date: ctx.dia, created_by: ctx.quem,
       })), !ctx.podeEditar)}
@@ -533,7 +587,7 @@ function Pendentes({ ctx, linhas }: { ctx: Ctx; linhas: T.PendingIssue[] }) {
 
   return (
     <Seccao
-      cor={CORES.pendentes} titulo="Assuntos Pendentes"
+      ancora="pendentes" cor={CORES.pendentes} titulo="Assuntos Pendentes"
       sub={<Badge>{linhas.filter(l => !l.resolvido).length} em aberto</Badge>}
       acoes={btnAdd(() => agir(() => T.inserir('pending_issues', {
         hotel_id: ctx.hotelId, data: ctx.dia, created_by: ctx.quem,
@@ -619,7 +673,7 @@ function Transfers({ ctx, linhas }: { ctx: Ctx; linhas: T.Transfer[] }) {
 
   return (
     <Seccao
-      cor={CORES.transfers} titulo="Transfers / Tours"
+      ancora="transfers" cor={CORES.transfers} titulo="Transfers / Tours"
       sub={<Badge>{ordenadas.filter(t => !t.concluido).length} por fazer</Badge>}
       acoes={btnAdd(() => agir(() => T.inserir('transfers', {
         hotel_id: ctx.hotelId, report_date: ctx.dia, created_by: ctx.quem,
@@ -701,7 +755,7 @@ function Breakfast({ ctx, linhas }: { ctx: Ctx; linhas: T.BreakfastBox[] }) {
 
   return (
     <Seccao
-      cor={CORES.breakfast} titulo="Breakfast Box"
+      ancora="breakfast" cor={CORES.breakfast} titulo="Breakfast Box"
       sub={<Badge tom={ordenadas.some(b => !b.pedida) ? 'vermelho' : 'cinza'}>
         {ordenadas.filter(b => !b.pedida).length} por pedir
       </Badge>}
@@ -797,7 +851,7 @@ function Relevantes({
   )
 
   return (
-    <Seccao cor={CORES.relevantes} titulo="Relevantes de Hoje">
+    <Seccao ancora="relevantes" cor={CORES.relevantes} titulo="Relevantes de Hoje">
       <div className="space-y-6">
         <Sub
           titulo="Relatório HSK" vazio={hsk.length === 0}
@@ -976,7 +1030,7 @@ function FeB({
 
   return (
     <Seccao
-      cor={CORES.fb} titulo="Números de Restaurante (F&B)"
+      ancora="fb" cor={CORES.fb} titulo="Números de Restaurante (F&B)"
       sub={<Badge tom="cinza">{diaSemanaLongo(ctx.dia)} · {dm(ctx.dia)}</Badge>}
       acoes={
         <div className="flex gap-1">
@@ -1229,7 +1283,7 @@ function NotasFb({ notas }: { notas: T.FbNotas | null }) {
   const equipa = (notas?.equipa ?? '').trim()
 
   return (
-    <Seccao cor={CORES.fb} titulo="Notas do F&B">
+    <Seccao ancora="fb-notas" cor={CORES.fb} titulo="Notas do F&B">
       {!linhas.length && !equipa ? (
         <p className="px-4 py-3 text-sm text-slate-500">
           A equipa de F&amp;B ainda não deixou notas deste dia.
@@ -1271,7 +1325,7 @@ function Manutencao({ ctx, linhas }: { ctx: Ctx; linhas: T.Maintenance[] }) {
 
   return (
     <Seccao
-      cor={CORES.manutencao} titulo="Controlo de Manutenção"
+      ancora="manutencao" cor={CORES.manutencao} titulo="Controlo de Manutenção"
       sub={<Badge tom={linhas.some(l => l.status !== 'resolvido' && diffDias(l.data, ctx.dia) > 7) ? 'vermelho' : 'cinza'}>
         {linhas.filter(l => l.status !== 'resolvido').length} por resolver
       </Badge>}
@@ -1350,7 +1404,7 @@ function Reclamacoes({ ctx, linhas }: { ctx: Ctx; linhas: T.Complaint[] }) {
 
   return (
     <Seccao
-      cor={CORES.reclamacoes} titulo="Gestão de Reclamações"
+      ancora="reclamacoes" cor={CORES.reclamacoes} titulo="Gestão de Reclamações"
       sub={<Badge tom={linhas.some(c => c.status !== 'fechada') ? 'ambar' : 'cinza'}>
         {linhas.filter(c => c.status !== 'fechada').length} abertas
       </Badge>}
@@ -1567,7 +1621,7 @@ function Chegadas({ ctx, hoje, amanha }: { ctx: Ctx; hoje: T.Arrival[]; amanha: 
 
   return (
     <Seccao
-      cor={CORES.chegadas} titulo="Chegadas"
+      ancora="chegadas" cor={CORES.chegadas} titulo="Chegadas"
       acoes={
         <div className="flex flex-wrap items-center gap-2">
           {(['hoje', 'amanha'] as const).map(a => (

@@ -125,25 +125,28 @@ export default function Inicio() {
       {/* ------------------------ números do dia ------------------------ */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Numero
-          to="/turno" rotulo="Ocupação hoje"
+          to="/turno#ocupacao" rotulo="Ocupação hoje"
           valor={d.hoje?.ocupacao !== null && d.hoje !== null ? `${Math.round(d.hoje.ocupacao)}` : '—'}
           sufixo={d.hoje?.ocupacao !== null && d.hoje !== null ? '%' : undefined}
           nota={d.hoje?.quartos !== null && d.hoje !== null
             ? `${d.hoje.quartos} quartos ocupados` : 'sem lançamento de hoje'}
         />
         <Numero
-          to="/turno" rotulo="Tarifa média hoje"
+          to="/turno#ocupacao" rotulo="Tarifa média hoje"
           valor={d.hoje?.tarifa != null ? money(d.hoje.tarifa) : '—'}
           nota={d.tarifaMedia7 != null ? `média 7 dias ${money(d.tarifaMedia7)}` : 'sem dados'}
         />
         <Numero
-          to="/turno" rotulo="Movimento de hoje"
+          to="/turno#chegadas" rotulo="Movimento de hoje"
           valor={d.hoje ? `${d.hoje.chegadas ?? 0} / ${d.hoje.saidas ?? 0}` : '—'}
           nota="chegadas / saídas"
         />
         {podeFb && (
           <Numero
-            to="/fb" rotulo="F&B últimos 7 dias"
+            /* O número é a soma de sete dias; a página «Dia» mostra um dia só.
+               Quem tem o painel vai para onde o período existe; quem não tem,
+               fica com o dia, que é o melhor que lhe é permitido ver. */
+            to={podeVerPainel ? '/fb-painel' : '/fb'} rotulo="F&B últimos 7 dias"
             valor={d.fb7dias != null ? money(d.fb7dias) : '—'}
             nota={d.fb7dias != null ? `média ${money(d.fb7dias / 7)}/dia` : 'sem lançamentos'}
           />
@@ -194,23 +197,35 @@ export default function Inicio() {
                   const livres = p.quartos !== null && p.ocupacao
                     ? Math.max(0, Math.round(p.quartos / (p.ocupacao / 100)) - p.quartos)
                     : null
+                  const legenda =
+                    `${dmy(p.data)} · ${p.ocupacao ?? '—'}% · ${p.quartos ?? '—'} ocupados`
+                    + (livres !== null ? ` · ${livres} livres` : '')
+                    + ' — abrir o relatório deste dia'
+                  // Cada dia leva ao relatório desse dia, na secção da ocupação: é onde
+                  // estes números se lançam e se corrigem. Era o caminho que faltava
+                  // — via-se a semana inteira sem ter como abrir o dia que salta à vista.
                   return (
-                    <div key={p.data} className="flex min-w-0 flex-1 flex-col justify-end px-1">
+                    <Link
+                      key={p.data} to={`/turno/${p.data}#ocupacao`}
+                      className="group flex min-w-0 flex-1 flex-col justify-end rounded px-1
+                                 focus-visible:outline focus-visible:outline-2
+                                 focus-visible:outline-offset-2 focus-visible:outline-brand-500"
+                    >
                       <div className="mb-1 text-center text-xs font-semibold tabular-nums text-slate-600">
-                        {destaque ? `${Math.round(p.ocupacao as number)}%` : ' '}
+                        {destaque ? `${Math.round(p.ocupacao as number)}%` : ' '}
                       </div>
                       <div
                         className="relative rounded bg-brand-50"
                         style={{ height: `${ALTURA}px` }}
-                        title={`${dmy(p.data)} · ${p.ocupacao ?? '—'}% · ${p.quartos ?? '—'} ocupados`
-                          + (livres !== null ? ` · ${livres} livres` : '')}
+                        title={legenda}
                       >
                         <div
-                          className="absolute inset-x-0 bottom-0 rounded bg-brand-500"
+                          className="absolute inset-x-0 bottom-0 rounded bg-brand-500
+                                     transition-colors group-hover:bg-brand-600"
                           style={{ height: `${alt}px` }}
                         />
                       </div>
-                    </div>
+                    </Link>
                   )
                 })}
                 </div>
@@ -221,8 +236,13 @@ export default function Inicio() {
                       <th className="w-24 py-1 text-left font-medium"> </th>
                       {d.previsao.map(p => (
                         <th key={p.data} className="py-1 text-center font-medium">
-                          {diaSemanaCurto(p.data)}<br />
-                          <span className="tabular-nums text-slate-700">{dm(p.data)}</span>
+                          <Link
+                            to={`/turno/${p.data}#ocupacao`}
+                            className="block rounded hover:bg-brand-50 hover:text-brand-700"
+                          >
+                            {diaSemanaCurto(p.data)}<br />
+                            <span className="tabular-nums text-slate-700">{dm(p.data)}</span>
+                          </Link>
                         </th>
                       ))}
                     </tr>
@@ -302,23 +322,32 @@ export default function Inicio() {
       {/* -------------------------- áreas ------------------------------- */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
 
-        <Link to="/turno" className="card block p-4 transition hover:border-brand-200 hover:shadow-md">
+        {/*
+          Três números de três secções diferentes. Era um cartão com um link só,
+          que levava os três ao mesmo sítio — e dois deles ao sítio errado. Agora
+          cada número é o seu próprio link: os objetos perdidos vivem dentro de
+          «Relevantes de Hoje» e é lá que se vai parar ao clicar nos perdidos.
+        */}
+        <section className="card p-4">
           <div className="font-semibold text-slate-900">Hoje na receção</div>
-          <div className="mt-3 flex gap-5">
-            <div>
-              <div className="text-xl font-semibold tabular-nums">{d.vips}</div>
-              <div className="text-xs text-slate-500">VIP</div>
-            </div>
-            <div>
-              <div className="text-xl font-semibold tabular-nums">{d.transfers}</div>
-              <div className="text-xs text-slate-500">transfers</div>
-            </div>
-            <div>
-              <div className="text-xl font-semibold tabular-nums">{d.perdidos}</div>
-              <div className="text-xs text-slate-500">perdidos</div>
-            </div>
+          <div className="mt-3 flex gap-2">
+            {[
+              { n: d.vips, rotulo: 'VIP', to: '/turno#vips' },
+              { n: d.transfers, rotulo: 'transfers', to: '/turno#transfers' },
+              { n: d.perdidos, rotulo: 'perdidos', to: '/turno#relevantes' },
+            ].map(x => (
+              <Link
+                key={x.rotulo} to={x.to}
+                className="-mx-1 min-w-0 flex-1 rounded-lg px-1 py-1 transition hover:bg-brand-50
+                           focus-visible:outline focus-visible:outline-2
+                           focus-visible:outline-offset-2 focus-visible:outline-brand-500"
+              >
+                <div className="text-xl font-semibold tabular-nums text-slate-900">{x.n}</div>
+                <div className="truncate text-xs text-slate-500">{x.rotulo}</div>
+              </Link>
+            ))}
           </div>
-        </Link>
+        </section>
 
         <Link to="/grupos" className="card block p-4 transition hover:border-brand-200 hover:shadow-md">
           <div className="font-semibold text-slate-900">Grupos</div>

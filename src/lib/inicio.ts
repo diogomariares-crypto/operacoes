@@ -39,6 +39,14 @@ export interface Alerta {
   detalhe: string
   /** O número à direita. Null quando a linha não é uma contagem. */
   valor: string | null
+  /**
+   * Para onde a linha leva — e leva ao sítio exato, não ao topo da página onde
+   * o sítio fica. A passagem de turno tem doze secções distribuídas por cinco
+   * separadores: aterrar lá em cima obrigava a procurar outra vez aquilo que o
+   * alerta acabou de dizer. Daí o `#`, que nomeia a secção
+   * (`ancora` em src/components/turno-parts.tsx) e a página trata de abrir o
+   * separador certo e de a trazer à vista.
+   */
   to: string
 }
 
@@ -191,7 +199,7 @@ export async function carregarInicio(hotelId: string, pode: Permissoes): Promise
       chave: 'reclamacoes', nivel: 'critico',
       titulo: reclamacoes === 1 ? 'Reclamação aberta' : 'Reclamações abertas',
       detalhe: desde ? `a mais antiga é de ${desde.split('-').reverse().join('/')}` : 'por responder',
-      valor: String(reclamacoes), to: '/turno',
+      valor: String(reclamacoes), to: '/turno#reclamacoes',
     })
   }
 
@@ -203,7 +211,7 @@ export async function carregarInicio(hotelId: string, pode: Permissoes): Promise
       chave: 'manutencao', nivel: idade !== null && idade > 30 ? 'critico' : 'aviso',
       titulo: 'Manutenções por resolver',
       detalhe: idade !== null ? `a mais antiga está aberta há ${idade} dias` : 'em aberto',
-      valor: String(manutencoes), to: '/turno',
+      valor: String(manutencoes), to: '/turno#manutencao',
     })
   }
 
@@ -212,7 +220,7 @@ export async function carregarInicio(hotelId: string, pode: Permissoes): Promise
     alertas.push({
       chave: 'pendentes', nivel: 'aviso', titulo: 'Pendentes de turno',
       detalhe: 'passados de um turno para o seguinte',
-      valor: String(pendentes), to: '/turno',
+      valor: String(pendentes), to: '/turno#pendentes',
     })
   }
 

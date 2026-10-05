@@ -9,10 +9,21 @@ export const CORES: Record<string, string> = {
 }
 
 export function Seccao({
-  cor, titulo, sub, acoes, children,
-}: { cor: string; titulo: string; sub?: ReactNode; acoes?: ReactNode; children: ReactNode }) {
+  cor, titulo, sub, acoes, ancora, children,
+}: {
+  cor: string; titulo: string; sub?: ReactNode; acoes?: ReactNode
+  /**
+   * Nome para se poder ligar a esta secção de fora — por exemplo do Início,
+   * que mostra o número e tem de levar a pessoa ao sítio onde ele vive e não
+   * ao topo de uma página com vinte secções.
+   *
+   * `scroll-mt-24` evita que o cabeçalho fixo tape o título ao chegar.
+   */
+  ancora?: string
+  children: ReactNode
+}) {
   return (
-    <section className="card overflow-hidden">
+    <section id={ancora} className="card overflow-hidden scroll-mt-24">
       <div style={{ background: cor }} className="h-1" />
       <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-4 py-3">
         <span style={{ background: cor }} className="h-2.5 w-2.5 shrink-0 rounded-full" />
