@@ -22,10 +22,12 @@ export async function fetchItems(
   return data as Item[]
 }
 
+/** Sem departamento devolve os de todos — é o que o Histórico precisa. */
 export async function fetchPeriods(
-  dept: Department, hotelId: string, kind?: PeriodKind,
+  dept: Department | undefined, hotelId: string, kind?: PeriodKind,
 ): Promise<Period[]> {
-  let q = supabase.from('periods').select('*').eq('department', dept).eq('hotel_id', hotelId)
+  let q = supabase.from('periods').select('*').eq('hotel_id', hotelId)
+  if (dept) q = q.eq('department', dept)
   if (kind) q = q.eq('kind', kind)
   const { data, error } = await q.order('end_date', { ascending: false })
   if (error) throw error

@@ -54,7 +54,16 @@ export interface Period {
   label: string
   occupied_rooms: number | null
   status: CountStatus
+  /**
+   * O instante em que a contagem foi fechada — é o dia em que o trabalho foi
+   * realmente feito. Não confundir com `end_date`, que é a data de contagem
+   * escolhida à mão e que pode ser corrigida (ou errada). Volta a null se a
+   * contagem for reaberta.
+   */
   submitted_at: string | null
+  /** O instante em que a contagem foi criada na aplicação. Nunca muda. */
+  created_at: string
+  updated_at: string
 }
 
 export interface Count {

@@ -41,6 +41,33 @@ export const dm = (iso: string) => {
   return `${d}/${m}`
 }
 
+/**
+ * Um instante guardado na base de dados (UTC) na hora de Lisboa:
+ * '2026-08-25T19:04:11.52Z' -> '25/08/2026, 20:04'.
+ * Serve para mostrar quando é que uma coisa foi feita, ao contrário das datas
+ * que o utilizador escolhe à mão.
+ */
+export const dmyHm = (ts: string | null | undefined) => {
+  if (!ts) return '—'
+  const d = new Date(ts)
+  if (Number.isNaN(d.getTime())) return '—'
+  return d.toLocaleString('pt-PT', {
+    day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: '2-digit', minute: '2-digit',
+    timeZone: 'Europe/Lisbon',
+  })
+}
+
+/** O dia (sem hora) de um instante guardado, na hora de Lisboa: '25/08/2026'. */
+export const diaDe = (ts: string | null | undefined) => {
+  if (!ts) return '—'
+  const d = new Date(ts)
+  if (Number.isNaN(d.getTime())) return '—'
+  return d.toLocaleDateString('pt-PT', {
+    day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Europe/Lisbon',
+  })
+}
+
 export const weekLabel = (start: string, end: string) => `${dm(start)} – ${dm(end)}`
 
 /** Segunda-feira da semana de uma data (ISO) */

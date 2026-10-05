@@ -4,7 +4,7 @@ import { useApp } from '../lib/appState'
 import { ensureMonth, fetchCounts, fetchItems, fetchPeriods, updatePeriod, upsertCount } from '../lib/data'
 import type { Count, Item, Period } from '../lib/types'
 import { MOTIVOS } from '../lib/types'
-import { money, monthLabel, monthRange, qty } from '../lib/format'
+import { dmyHm, money, monthLabel, monthRange, qty } from '../lib/format'
 import { Loading, NumInput, Spinner, useToast } from '../components/ui'
 import { ehMes, mesCorrente, useLembrado } from '../lib/lembrar'
 import { supabase } from '../lib/supabase'
@@ -312,7 +312,7 @@ export default function ContagemMensal() {
               onClick={async () => {
                 if (!confirm('Reabrir este mês para corrigir valores?')) return
                 await updatePeriod(period.id, { status: 'rascunho', submitted_at: null })
-                setPeriod({ ...period, status: 'rascunho' })
+                setPeriod({ ...period, status: 'rascunho', submitted_at: null })
                 toast('Mês reaberto — já podes corrigir')
               }}
             >
@@ -322,8 +322,9 @@ export default function ContagemMensal() {
             <button
               className="btn-primary"
               onClick={async () => {
-                await updatePeriod(period.id, { status: 'submetido', submitted_at: new Date().toISOString() })
-                setPeriod({ ...period, status: 'submetido' })
+                const agora = new Date().toISOString()
+                await updatePeriod(period.id, { status: 'submetido', submitted_at: agora })
+                setPeriod({ ...period, status: 'submetido', submitted_at: agora })
                 toast('Mês fechado')
               }}
             >
@@ -331,6 +332,18 @@ export default function ContagemMensal() {
             </button>
           ))}
         </div>
+
+        {/* O mês é escolhido à mão; isto é registado pela aplicação e é a única
+            forma de saber quando a contagem foi realmente feita. */}
+        {period && (
+          <p className="w-full text-xs text-slate-500">
+            {period.submitted_at
+              ? <>Fechado a <strong className="font-medium">{dmyHm(period.submitted_at)}</strong></>
+              : fechado
+                ? <>Fechado sem registo da data · criado a {dmyHm(period.created_at)}</>
+                : <>Criado a {dmyHm(period.created_at)} · ainda não fechado</>}
+          </p>
+        )}
 
         {ordem !== 'fornecedor' && (
           <p className="w-full text-xs text-slate-500">

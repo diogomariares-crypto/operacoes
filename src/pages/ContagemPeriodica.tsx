@@ -7,7 +7,7 @@ import {
   fetchPeriods, fetchPreviousClosing, fetchReceivedInPeriod, fetchStock, updatePeriod, upsertCount,
 } from '../lib/data'
 import type { Count, Department, Item, Period, PeriodKind, StockRow } from '../lib/types'
-import { addDays, dmy, lastDayOfMonth, money, qty, todayISO } from '../lib/format'
+import { addDays, dmy, dmyHm, lastDayOfMonth, money, qty, todayISO } from '../lib/format'
 import { Loading, Modal, NumInput, Spinner, useToast } from '../components/ui'
 import { useLembrado } from '../lib/lembrar'
 import { supabase } from '../lib/supabase'
@@ -266,9 +266,11 @@ export default function ContagemPeriodica({ dept }: { dept: Department }) {
       )
       if (error) { toast(error.message, 'erro'); return }
     }
-    await updatePeriod(period.id, { status: 'submetido', submitted_at: new Date().toISOString() })
-    setPeriod({ ...period, status: 'submetido' })
-    setPeriods(ps => ps.map(p => (p.id === period.id ? { ...p, status: 'submetido' } : p)))
+    const agora = new Date().toISOString()
+    await updatePeriod(period.id, { status: 'submetido', submitted_at: agora })
+    setPeriod({ ...period, status: 'submetido', submitted_at: agora })
+    setPeriods(ps => ps.map(p => (
+      p.id === period.id ? { ...p, status: 'submetido', submitted_at: agora } : p)))
     toast('Contagem fechada')
   }
 
@@ -280,8 +282,9 @@ export default function ContagemPeriodica({ dept }: { dept: Department }) {
     )) return
     try {
       await updatePeriod(period.id, { status: 'rascunho', submitted_at: null })
-      setPeriod({ ...period, status: 'rascunho' })
-      setPeriods(ps => ps.map(p => (p.id === period.id ? { ...p, status: 'rascunho' } : p)))
+      setPeriod({ ...period, status: 'rascunho', submitted_at: null })
+      setPeriods(ps => ps.map(p => (
+        p.id === period.id ? { ...p, status: 'rascunho', submitted_at: null } : p)))
       toast('Contagem reaberta — já podes corrigir')
     } catch (e) { toast((e as Error).message, 'erro') }
   }
@@ -403,6 +406,15 @@ export default function ContagemPeriodica({ dept }: { dept: Department }) {
               <div className="text-xs text-slate-500">
                 Cobre o consumo de {dmy(period.start_date)} a {dmy(period.end_date)}
                 {' · '}{Math.round((Date.parse(period.end_date) - Date.parse(period.start_date)) / 86400000) + 1} dias
+              </div>
+              {/* A data de contagem acima é escolhida à mão; esta é registada pela
+                  aplicação e é a única forma de saber quando o trabalho foi feito. */}
+              <div className="text-xs text-slate-500">
+                {period.submitted_at
+                  ? <>Fechada a <strong className="font-medium">{dmyHm(period.submitted_at)}</strong></>
+                  : fechada
+                    ? <>Fechada sem registo da data · criada a {dmyHm(period.created_at)}</>
+                    : <>Criada a {dmyHm(period.created_at)} · ainda não fechada</>}
               </div>
             </div>
             <div className="flex items-center gap-3 text-xs">
