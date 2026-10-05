@@ -214,14 +214,17 @@ export default function Inicio() {
                       <div className="mb-1 text-center text-xs font-semibold tabular-nums text-slate-600">
                         {destaque ? `${Math.round(p.ocupacao as number)}%` : ' '}
                       </div>
+                      {/* As barras vão na cor do hotel, e não na da casa: é o
+                          terceiro sinal de onde se está, e aqui a cor não quer
+                          dizer bem nem mal — diz de quem é a ocupação. */}
                       <div
-                        className="relative rounded bg-brand-50"
+                        className="relative rounded bg-hotel-50"
                         style={{ height: `${ALTURA}px` }}
                         title={legenda}
                       >
                         <div
-                          className="absolute inset-x-0 bottom-0 rounded bg-brand-500
-                                     transition-colors group-hover:bg-brand-600"
+                          className="absolute inset-x-0 bottom-0 rounded bg-hotel-500
+                                     transition-colors group-hover:bg-hotel-600"
                           style={{ height: `${alt}px` }}
                         />
                       </div>

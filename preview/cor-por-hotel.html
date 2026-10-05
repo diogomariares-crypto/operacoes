@@ -1,0 +1,529 @@
+<!doctype html>
+<html lang="pt-PT">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Cor por hotel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap">
+<style>
+/* Duas superfícies: a página (que fala sobre a app) e o ecrã (que é a app).
+   A página é temática; o ecrã é sempre claro, porque a app é só clara. */
+:root {
+  --papel: #fbfbfa;
+  --papel-2: #ffffff;
+  --tinta: #16191d;
+  --tinta-2: #585f69;
+  --risco: #e3e4e2;
+  --realce: #1a6b4a;
+  --mau: #991b1b;
+  --morno: #a16207;
+  --fonte: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
+  --app: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --papel: #14161a; --papel-2: #1b1e23; --tinta: #eceef0; --tinta-2: #a0a7b1;
+    --risco: #2b2f36; --realce: #5ec89b; --mau: #f08b8b; --morno: #d8a23c;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --papel: #14161a; --papel-2: #1b1e23; --tinta: #eceef0; --tinta-2: #a0a7b1;
+  --risco: #2b2f36; --realce: #5ec89b; --mau: #f08b8b; --morno: #d8a23c;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--papel);
+  color: var(--tinta);
+  font: 400 15px/1.55 var(--fonte);
+  -webkit-font-smoothing: antialiased;
+}
+.folha {
+  max-width: 62rem;
+  margin: 0 auto;
+  padding-inline: 20px;
+  padding-block: 2.5rem 4rem;
+}
+
+h1 {
+  font-size: clamp(1.6rem, 1.2rem + 1.6vw, 2.2rem);
+  font-weight: 600; letter-spacing: -0.02em; line-height: 1.15;
+  margin: 0 0 .5rem; text-wrap: balance;
+}
+.chamada { margin: 0; max-width: 46ch; color: var(--tinta-2); }
+h2 {
+  font-size: .72rem; font-weight: 600; text-transform: uppercase;
+  letter-spacing: .09em; color: var(--tinta-2);
+  margin: 0 0 .75rem;
+}
+
+/* ------------------------------- comandos -------------------------------- */
+.comandos { display: flex; flex-wrap: wrap; gap: 1.75rem; margin: 2rem 0 1.25rem; }
+.grupo { display: flex; flex-direction: column; gap: .6rem; min-width: 0; }
+.fila { display: flex; flex-wrap: wrap; gap: .4rem; }
+button.ficha {
+  font: inherit; font-size: .86rem; font-weight: 500;
+  display: inline-flex; align-items: center; gap: .45rem;
+  padding: .4rem .75rem; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--risco); background: var(--papel-2); color: var(--tinta-2);
+  transition: border-color .15s, color .15s;
+}
+button.ficha:hover { color: var(--tinta); }
+button.ficha[aria-pressed="true"] {
+  border-color: currentColor; color: var(--tinta); font-weight: 600;
+}
+button.ficha:focus-visible { outline: 2px solid var(--realce); outline-offset: 2px; }
+.pingo { width: .7rem; height: .7rem; border-radius: 3px; flex: 0 0 auto; }
+
+/* --------------------------------- o ecrã -------------------------------- */
+/* Reprodução dos componentes reais da app: .card, .btn-*, .input e as cores de
+   estado, com os mesmos valores de slate e o mesmo fundo #f6f7f8. */
+.ecra {
+  --b50: #ecfdf5; --b100: #d1fae5; --b200: #a7f3d0;
+  --b500: #1a6b4a; --b600: #15593d; --b700: #114730;
+  --h500: #1a6b4a;
+  --faixa: 0px;
+  font-family: var(--app);
+  background: #f6f7f8; color: #0f172a;
+  border: 1px solid var(--risco); border-radius: 14px;
+  overflow: hidden; margin-top: .5rem;
+  container-type: inline-size;
+}
+.barra-topo {
+  background: #fff; border-bottom: 1px solid #e2e8f0;
+  display: flex; align-items: center; gap: .6rem;
+  padding: .55rem .75rem;
+}
+.faixa { height: var(--faixa); background: var(--h500); transition: height .18s; }
+.volta {
+  display: inline-flex; align-items: center; gap: .35rem;
+  border: 1px solid #e2e8f0; border-radius: 9px; padding: .18rem .5rem .18rem .2rem;
+  font-size: .8rem; font-weight: 600; color: #0f172a; white-space: nowrap;
+}
+.marca {
+  width: 1.65rem; height: 1.65rem; border-radius: 8px;
+  background: var(--b500); color: #fff;
+  display: grid; place-items: center; font-size: .72rem; font-weight: 700;
+}
+.seletor {
+  border: 1px solid #cbd5e1; border-radius: 9px; background: #fff;
+  padding: .3rem .55rem; font-size: .8rem; font-weight: 600;
+  color: var(--h500); white-space: nowrap; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis;
+}
+.pilulas {
+  margin-left: auto; display: flex; gap: .1rem; background: #f1f5f9;
+  border-radius: 10px; padding: .2rem; min-width: 0; overflow: hidden;
+}
+.pilulas span {
+  font-size: .76rem; font-weight: 500; color: #64748b;
+  padding: .25rem .55rem; border-radius: 7px; white-space: nowrap;
+}
+.pilulas span.on { background: #fff; color: #0f172a; box-shadow: 0 1px 2px #0f172a1f; }
+.avatar {
+  width: 1.7rem; height: 1.7rem; border-radius: 999px; background: #f1f5f9;
+  display: grid; place-items: center; font-size: .78rem; font-weight: 600; color: #334155;
+  flex: 0 0 auto;
+}
+
+.corpo { padding: .9rem; display: flex; flex-direction: column; gap: .75rem; }
+.card {
+  background: #fff; border: 1px solid #e2e8f0; border-radius: 12px;
+  box-shadow: 0 1px 2px #0f172a0d;
+}
+.numeros { display: grid; gap: .6rem; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@container (min-width: 620px) { .numeros { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.numeros .card { padding: .7rem .8rem; }
+.rotulo { font-size: .68rem; font-weight: 500; color: #64748b; }
+.valor {
+  font-size: 1.45rem; font-weight: 600; margin-top: .2rem;
+  font-variant-numeric: tabular-nums; color: #0f172a; line-height: 1.1;
+}
+.valor small { font-size: .95rem; font-weight: 500; }
+.nota { font-size: .72rem; color: #64748b; margin-top: .05rem; }
+
+.duas { display: grid; gap: .6rem; align-items: start; }
+@container (min-width: 620px) { .duas { grid-template-columns: minmax(0,1.3fr) minmax(0,1fr); } }
+.duas > .card { padding: .85rem; min-width: 0; }
+.titulo-sec { font-size: .86rem; font-weight: 600; color: #0f172a; }
+
+.alerta {
+  display: flex; align-items: center; gap: .55rem;
+  padding: .5rem 0; border-top: 1px solid #f1f5f9;
+}
+.alerta:first-of-type { border-top: 0; }
+.quadro { width: .65rem; height: .65rem; border-radius: 3px; flex: 0 0 auto; }
+.alerta .txt { min-width: 0; flex: 1; }
+.alerta .t { font-size: .78rem; font-weight: 500; color: #1e293b; display: block; }
+.alerta .d { font-size: .7rem; color: #64748b; display: block; }
+.alerta .n { font-size: .95rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.critico { color: #991b1b; } .bg-critico { background: #991b1b; }
+.aviso   { color: #a16207; } .bg-aviso   { background: #a16207; }
+.okish   { color: var(--b600); } .bg-ok { background: var(--b500); }
+
+.grafico { display: flex; align-items: flex-end; gap: .25rem; margin-top: .7rem; }
+.coluna { flex: 1; min-width: 0; }
+.pista { background: var(--b50); border-radius: 4px; height: 76px; position: relative; }
+.enche { position: absolute; inset-inline: 0; bottom: 0; background: var(--b500); border-radius: 4px; }
+.dias {
+  display: flex; gap: .25rem; margin-top: .3rem;
+  font-size: .62rem; color: #64748b; font-variant-numeric: tabular-nums;
+}
+.dias span { flex: 1; min-width: 0; text-align: center; }
+
+.accoes { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; padding: .85rem; }
+.btn {
+  font: inherit; font-size: .82rem; font-weight: 500;
+  border-radius: 9px; padding: .45rem .8rem; border: 1px solid transparent;
+}
+.btn-primary { background: var(--b500); color: #fff; }
+.btn-ghost { background: #fff; color: #334155; border-color: #cbd5e1; }
+.btn-danger { background: #dc2626; color: #fff; }
+.btn[disabled] { opacity: .5; }
+.campo {
+  border: 1px solid var(--b500); border-radius: 9px; background: #fff;
+  padding: .4rem .6rem; font-size: .82rem; color: #0f172a;
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--b500) 20%, transparent);
+  min-width: 0; flex: 1 1 10rem;
+}
+.chip-marca {
+  display: inline-flex; align-items: center; border-radius: 999px;
+  padding: .12rem .55rem; font-size: .7rem; font-weight: 500;
+  background: var(--b100); color: var(--b700);
+}
+
+/* ------------------------------- o veredicto ----------------------------- */
+.veredicto { margin-top: 2.25rem; }
+.painel {
+  background: var(--papel-2); border: 1px solid var(--risco);
+  border-radius: 14px; padding: 1.1rem 1.15rem;
+}
+.frase { margin: 0 0 1rem; font-size: .95rem; }
+.frase strong { font-weight: 600; }
+.selo {
+  display: inline-flex; align-items: center; gap: .4rem;
+  font-size: .72rem; font-weight: 600; text-transform: uppercase; letter-spacing: .07em;
+  margin-bottom: .55rem;
+}
+.medidas { width: 100%; border-collapse: collapse; font-size: .84rem; }
+.medidas th {
+  text-align: left; font-weight: 500; color: var(--tinta-2);
+  font-size: .7rem; text-transform: uppercase; letter-spacing: .07em;
+  padding: 0 .5rem .4rem 0; border-bottom: 1px solid var(--risco);
+}
+.medidas th:last-child, .medidas td:last-child { text-align: right; }
+.medidas td {
+  padding: .42rem .5rem .42rem 0; border-bottom: 1px solid var(--risco);
+  font-variant-numeric: tabular-nums;
+}
+.par { display: inline-flex; gap: .2rem; vertical-align: -2px; margin-right: .5rem; }
+.par i { width: .85rem; height: .85rem; border-radius: 3px; display: block; }
+.ok-txt { color: var(--realce); font-weight: 600; }
+.mau-txt { color: var(--mau); font-weight: 600; }
+.rodape {
+  margin: 1rem 0 0; font-size: .82rem; color: var(--tinta-2);
+  padding-top: .9rem; border-top: 1px solid var(--risco);
+}
+.paleta { display: flex; gap: .3rem; margin-top: .7rem; flex-wrap: wrap; }
+.paleta b {
+  font: 500 .64rem/1 var(--fonte); color: var(--tinta-2);
+  display: grid; gap: .25rem; justify-items: center;
+}
+.paleta b i { width: 2.6rem; height: 1.5rem; border-radius: 5px; display: block; border: 1px solid #0003; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<main class="folha">
+
+  <h1>Cor por hotel</h1>
+  <p class="chamada">
+    O mesmo ecrã do Início, nos quatro hotéis. Escolhe até onde a cor vai: só a
+    marcar de quem é o ecrã, ou a pintar a app toda.
+  </p>
+
+  <div class="comandos">
+    <div class="grupo">
+      <h2>Hotel</h2>
+      <div class="fila" id="hoteis"></div>
+    </div>
+    <div class="grupo">
+      <h2>Até onde vai a cor</h2>
+      <div class="fila" id="niveis"></div>
+    </div>
+  </div>
+
+  <section class="ecra" id="ecra" aria-label="Pré-visualização do ecrã de Início">
+    <div class="barra-topo">
+      <span class="volta"><span class="marca">cb</span><span id="dept">Front Office</span></span>
+      <span class="seletor" id="nome-hotel">Gravity</span>
+      <span class="pilulas">
+        <span class="on">Início</span><span>Turno</span><span>Stock</span><span>Front Office</span>
+      </span>
+      <span class="avatar">D</span>
+    </div>
+    <div class="faixa" id="faixa"></div>
+
+    <div class="corpo">
+      <div class="numeros">
+        <div class="card">
+          <div class="rotulo">Ocupação hoje</div>
+          <div class="valor">94<small>%</small></div>
+          <div class="nota">42 quartos ocupados</div>
+        </div>
+        <div class="card">
+          <div class="rotulo">Tarifa média hoje</div>
+          <div class="valor">87 €</div>
+          <div class="nota">média 7 dias 84 €</div>
+        </div>
+        <div class="card">
+          <div class="rotulo">Movimento de hoje</div>
+          <div class="valor">23 / 19</div>
+          <div class="nota">chegadas / saídas</div>
+        </div>
+        <div class="card">
+          <div class="rotulo">F&amp;B últimos 7 dias</div>
+          <div class="valor">4 312 €</div>
+          <div class="nota">média 616 €/dia</div>
+        </div>
+      </div>
+
+      <div class="duas">
+        <div class="card">
+          <div class="titulo-sec">Ocupação prevista</div>
+          <div class="grafico" id="grafico"></div>
+          <div class="dias" id="dias"></div>
+        </div>
+        <div class="card">
+          <div class="titulo-sec">Precisa de atenção</div>
+          <div style="margin-top:.5rem">
+            <div class="alerta">
+              <span class="quadro bg-critico"></span>
+              <span class="txt">
+                <span class="t">Reclamações abertas</span>
+                <span class="d">a mais antiga é de 28/09</span>
+              </span>
+              <span class="n critico">2</span>
+            </div>
+            <div class="alerta">
+              <span class="quadro bg-aviso"></span>
+              <span class="txt">
+                <span class="t">Manutenções por resolver</span>
+                <span class="d">a mais antiga está aberta há 44 dias</span>
+              </span>
+              <span class="n aviso">44</span>
+            </div>
+            <div class="alerta">
+              <span class="quadro bg-ok"></span>
+              <span class="txt">
+                <span class="t">Contagens em dia</span>
+                <span class="d">a última é de há 3 dias</span>
+              </span>
+              <span class="n okish">✓</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card accoes">
+        <span class="chip-marca">contagem aberta</span>
+        <input class="campo" value="Quartos ocupados" aria-label="Exemplo de campo com foco">
+        <button class="btn btn-primary">Guardar</button>
+        <button class="btn btn-ghost">Cancelar</button>
+        <button class="btn btn-danger">Apagar</button>
+        <button class="btn btn-primary" disabled>Guardar</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="veredicto">
+    <h2>O que as contas dizem</h2>
+    <div class="painel">
+      <div class="selo" id="selo"></div>
+      <p class="frase" id="frase"></p>
+      <table class="medidas">
+        <thead>
+          <tr><th>A cor de agir contra…</th><th>Distância</th><th>Veredicto</th></tr>
+        </thead>
+        <tbody id="linhas"></tbody>
+      </table>
+      <div class="paleta" id="paleta"></div>
+      <p class="rodape">
+        A distância é ΔE em OKLab (×100), a mesma medida que já usámos para separar
+        o vermelho do âmbar nos alertas. Abaixo de 15, duas cores lado a lado
+        deixam de se distinguir com segurança — e quem não distingue bem vermelhos
+        e verdes vê-as ainda mais juntas. O texto branco sobre a cor tem de ficar
+        acima de 4,5:1, que é o mínimo para texto normal.
+      </p>
+    </div>
+  </section>
+</main>
+
+<script>
+/* DADOS: gerado por scripts/paletas-hotel.mjs — não editar à mão. */
+const DADOS = {"paletas":{"identidade":{"gravity":{"50":"#f4f9ff","100":"#e4f0ff","200":"#cbe2ff","500":"#155aa7","600":"#114b8c","700":"#0d3c70"},"tokyo":{"50":"#fff6f5","100":"#ffe9e6","200":"#ffd4cf","500":"#9e2d2d","600":"#842424","700":"#6a1d1c"},"teva":{"50":"#fff6ef","100":"#ffeada","200":"#ffd7b7","500":"#844b10","600":"#6e3e0c","700":"#58310a"},"concrete":{"50":"#f4f9ff","100":"#e4f0ff","200":"#d0e1f7","500":"#535c68","600":"#444c58","700":"#343d48"}},"vivo":{"gravity":{"50":"#f4f9ff","100":"#e4f0ff","200":"#cbe2ff","500":"#155aa7","600":"#114b8c","700":"#0d3c70"},"tokyo":{"50":"#fff6f5","100":"#ffe9e6","200":"#ffd4cf","500":"#9e2d2d","600":"#842424","700":"#6a1d1c"},"teva":{"50":"#fff6ef","100":"#ffeada","200":"#ffd7b7","500":"#844b10","600":"#6e3e0c","700":"#58310a"},"concrete":{"50":"#f4f9ff","100":"#e4f0ff","200":"#d0e1f7","500":"#535c68","600":"#444c58","700":"#343d48"}},"seguro":{"gravity":{"50":"#f4f9ff","100":"#e4f0ff","200":"#cbe2ff","500":"#155aa7","600":"#114b8c","700":"#0d3c70"},"tokyo":{"50":"#fff6f5","100":"#ffe9e6","200":"#ffd4cf","500":"#552a27","600":"#421d1b","700":"#2f1210"},"teva":{"50":"#fff6f0","100":"#ffeadb","200":"#fbd8bd","500":"#4d3118","600":"#3c240f","700":"#2a1706"},"concrete":{"50":"#f4f9ff","100":"#e4f0ff","200":"#d0e1f7","500":"#4e5662","600":"#3e4752","700":"#2f3842"}}},"verde":{"50":"#ecfdf5","100":"#d1fae5","200":"#a7f3d0","500":"#1a6b4a","600":"#15593d","700":"#114730"},"medidas":{"identidade":{"gravity":{"hex":"#155aa7","linhas":[{"nome":"alerta crítico","de":27.679159964760373},{"nome":"alerta aviso","de":27.314325856656836},{"nome":"botão Apagar","de":34.34150794886783},{"nome":"cinzento desactivado","de":26.213031570318616}],"pior":26.213031570318616,"contraste":6.879932029976204},"tokyo":{"hex":"#9e2d2d","linhas":[{"nome":"alerta crítico","de":3.088731350826294},{"nome":"alerta aviso","de":12.886139302988694},{"nome":"botão Apagar","de":12.469468338486696},{"nome":"cinzento desactivado","de":29.515327774856253}],"pior":3.088731350826294,"contraste":7.324558775086607},"teva":{"hex":"#844b10","linhas":[{"nome":"alerta crítico","de":9.795381057703835},{"nome":"alerta aviso","de":8.551374299694709},{"nome":"botão Apagar","de":17.583141062736303},{"nome":"cinzento desactivado","de":27.581537945681323}],"pior":8.551374299694709,"contraste":7.011640245333865},"concrete":{"hex":"#535c68","linhas":[{"nome":"alerta crítico","de":17.911956969429763},{"nome":"alerta aviso","de":16.500101494260782},{"nome":"botão Apagar","de":25.38118625334189},{"nome":"cinzento desactivado","de":23.965270667334927}],"pior":16.500101494260782,"contraste":6.777355552724789}},"vivo":{"gravity":{"hex":"#155aa7","linhas":[{"nome":"alerta crítico","de":27.679159964760373},{"nome":"alerta aviso","de":27.314325856656836},{"nome":"botão Apagar","de":34.34150794886783},{"nome":"cinzento desactivado","de":26.213031570318616}],"pior":26.213031570318616,"contraste":6.879932029976204},"tokyo":{"hex":"#9e2d2d","linhas":[{"nome":"alerta crítico","de":3.088731350826294},{"nome":"alerta aviso","de":12.886139302988694},{"nome":"botão Apagar","de":12.469468338486696},{"nome":"cinzento desactivado","de":29.515327774856253}],"pior":3.088731350826294,"contraste":7.324558775086607},"teva":{"hex":"#844b10","linhas":[{"nome":"alerta crítico","de":9.795381057703835},{"nome":"alerta aviso","de":8.551374299694709},{"nome":"botão Apagar","de":17.583141062736303},{"nome":"cinzento desactivado","de":27.581537945681323}],"pior":8.551374299694709,"contraste":7.011640245333865},"concrete":{"hex":"#535c68","linhas":[{"nome":"alerta crítico","de":17.911956969429763},{"nome":"alerta aviso","de":16.500101494260782},{"nome":"botão Apagar","de":25.38118625334189},{"nome":"cinzento desactivado","de":23.965270667334927}],"pior":16.500101494260782,"contraste":6.777355552724789}},"seguro":{"gravity":{"hex":"#155aa7","linhas":[{"nome":"alerta crítico","de":27.679159964760373},{"nome":"alerta aviso","de":27.314325856656836},{"nome":"botão Apagar","de":34.34150794886783},{"nome":"cinzento desactivado","de":26.213031570318616}],"pior":26.213031570318616,"contraste":6.879932029976204},"tokyo":{"hex":"#552a27","linhas":[{"nome":"alerta crítico","de":14.084473064527836},{"nome":"alerta aviso","de":22.810160856546776},{"nome":"botão Apagar","de":27.966899958482976},{"nome":"cinzento desactivado","de":37.98987752597138}],"pior":14.084473064527836,"contraste":12.022386433617138},"teva":{"hex":"#4d3118","linhas":[{"nome":"alerta crítico","de":15.740851068001827},{"nome":"alerta aviso","de":22.260429860919693},{"nome":"botão Apagar","de":29.183916952353517},{"nome":"cinzento desactivado","de":38.044908022539474}],"pior":15.740851068001827,"contraste":11.8773526063249},"concrete":{"hex":"#4e5662","linhas":[{"nome":"alerta crítico","de":17.610338873681812},{"nome":"alerta aviso","de":17.588800056801247},{"nome":"botão Apagar","de":26.22650190796454},{"nome":"cinzento desactivado","de":26.042647713861626}],"pior":17.588800056801247,"contraste":7.4167626430829126}},"verde":{"hex":"#1a6b4a","linhas":[{"nome":"alerta crítico","de":23.801240487526623},{"nome":"alerta aviso","de":17.907974982442955},{"nome":"botão Apagar","de":30.696179469267694},{"nome":"cinzento desactivado","de":26.069963263385258}],"pior":17.907974982442955,"contraste":6.469734311490804}}};
+
+const HOTEIS = [
+  { id: 'gravity',  nome: 'Gravity',     dept: 'Front Office'    },
+  { id: 'tokyo',    nome: 'Tokyo Hoose', dept: 'Front Office'    },
+  { id: 'teva',     nome: 'Casa Teva',   dept: 'Housekeeping'    },
+  { id: 'concrete', nome: 'Concrete',    dept: 'Contabilidade'   },
+]
+
+const NIVEIS = [
+  { id: 'identidade', nome: 'Só identidade',
+    desc: 'faixa, nome do hotel e barras do gráfico' },
+  { id: 'vivo', nome: 'Pintar a app toda',
+    desc: 'botões, focos, tudo' },
+  { id: 'seguro', nome: 'Pintar, afastado dos alertas',
+    desc: 'o mesmo, com o vermelho e o castanho puxados para o escuro' },
+]
+
+const OCUPACAO = [
+  { dia: 'seg 06', pct: 94 }, { dia: 'ter 07', pct: 97 }, { dia: 'qua 08', pct: 91 },
+  { dia: 'qui 09', pct: 99 }, { dia: 'sex 10', pct: 96 }, { dia: 'sáb 11', pct: 98 },
+  { dia: 'dom 12', pct: 89 },
+]
+
+let hotel = 'gravity'
+let nivel = 'identidade'
+
+/* ------------------------------- comandos -------------------------------- */
+
+function fichas(alvo, lista, activo, aoClicar, corDe) {
+  const el = document.getElementById(alvo)
+  el.replaceChildren(...lista.map(x => {
+    const b = document.createElement('button')
+    b.className = 'ficha'
+    b.type = 'button'
+    b.setAttribute('aria-pressed', String(x.id === activo))
+    if (corDe) {
+      const p = document.createElement('span')
+      p.className = 'pingo'
+      p.style.background = corDe(x.id)
+      b.append(p)
+    }
+    b.append(document.createTextNode(x.nome))
+    b.title = x.desc ?? ''
+    b.addEventListener('click', () => { aoClicar(x.id); pintar() })
+    return b
+  }))
+}
+
+/* --------------------------------- gráfico -------------------------------- */
+
+const maxOcup = Math.max(100, ...OCUPACAO.map(o => o.pct))
+document.getElementById('grafico').replaceChildren(...OCUPACAO.map(o => {
+  const c = document.createElement('div'); c.className = 'coluna'
+  const p = document.createElement('div'); p.className = 'pista'
+  const f = document.createElement('div'); f.className = 'enche'
+  f.style.height = Math.round(o.pct / maxOcup * 76) + 'px'
+  p.append(f); c.append(p)
+  return c
+}))
+document.getElementById('dias').replaceChildren(...OCUPACAO.map(o => {
+  const s = document.createElement('span'); s.textContent = o.dia; return s
+}))
+
+/* -------------------------------- pintar ---------------------------------- */
+
+function pintar() {
+  const ecra = document.getElementById('ecra')
+  const pal = DADOS.paletas[nivel === 'identidade' ? 'identidade' : nivel][hotel]
+  const h = HOTEIS.find(x => x.id === hotel)
+
+  // No nível «só identidade» a cor de agir continua a ser o verde; a cor do
+  // hotel entra apenas onde não significa estado nenhum.
+  const marca = nivel === 'identidade' ? DADOS.verde : pal
+  for (const k of [50, 100, 200, 500, 600, 700]) {
+    ecra.style.setProperty('--b' + k, marca[k])
+  }
+  ecra.style.setProperty('--h500', pal[500])
+  ecra.style.setProperty('--faixa', nivel === 'identidade' ? '4px' : '0px')
+  if (nivel !== 'identidade') ecra.style.setProperty('--b500', pal[500])
+
+  // No nível identidade as barras seguem o hotel, não a marca.
+  for (const f of document.querySelectorAll('.enche')) {
+    f.style.background = nivel === 'identidade' ? pal[500] : ''
+  }
+  for (const p of document.querySelectorAll('.pista')) {
+    p.style.background = nivel === 'identidade' ? pal[50] : ''
+  }
+
+  document.getElementById('nome-hotel').textContent = h.nome
+  document.getElementById('dept').textContent = h.dept
+
+  fichas('hoteis', HOTEIS, hotel, id => { hotel = id }, id => DADOS.paletas.vivo[id][500])
+  fichas('niveis', NIVEIS, nivel, id => { nivel = id }, null)
+
+  veredicto(pal)
+}
+
+function veredicto(pal) {
+  const corDeAgir = nivel === 'identidade' ? DADOS.verde[500] : pal[500]
+  const m = nivel === 'identidade' ? DADOS.medidas.verde : DADOS.medidas[nivel][hotel]
+  const nome = HOTEIS.find(x => x.id === hotel).nome
+
+  const refs = { 'alerta crítico': '#991b1b', 'alerta aviso': '#a16207',
+                 'botão Apagar': '#dc2626', 'cinzento desactivado': '#94a3b8' }
+
+  const corpo = m.linhas.map(l => {
+    const bom = l.de >= 15
+    return `<tr>
+      <td><span class="par"><i style="background:${corDeAgir}"></i><i style="background:${refs[l.nome]}"></i></span>${l.nome}</td>
+      <td>ΔE ${l.de.toFixed(1)}</td>
+      <td class="${bom ? 'ok-txt' : 'mau-txt'}">${bom ? 'distinguem-se' : 'perto demais'}</td>
+    </tr>`
+  }).join('')
+  const ctBom = m.contraste >= 4.5
+  document.getElementById('linhas').innerHTML = corpo + `<tr>
+      <td><span class="par"><i style="background:${corDeAgir}"></i><i style="background:#ffffff;border-color:#0003"></i></span>texto branco sobre a cor</td>
+      <td>${m.contraste.toFixed(2)}:1</td>
+      <td class="${ctBom ? 'ok-txt' : 'mau-txt'}">${ctBom ? 'legível' : 'ilegível'}</td>
+    </tr>`
+
+  const maus = m.linhas.filter(l => l.de < 15)
+  const selo = document.getElementById('selo')
+  const frase = document.getElementById('frase')
+
+  if (nivel === 'identidade') {
+    selo.innerHTML = '<span class="pingo" style="background:var(--realce)"></span><span class="ok-txt">Sem risco</span>'
+    frase.innerHTML = `A cor de <strong>${nome}</strong> aparece na faixa, no nome do hotel
+      e nas barras do gráfico. A cor de agir continua a ser o verde e os alertas ficam
+      onde estão, por isso não há nada que possa colidir — os números abaixo são os do
+      verde actual, e não mudam de hotel para hotel.`
+  } else if (maus.length === 0) {
+    selo.innerHTML = '<span class="pingo" style="background:var(--realce)"></span><span class="ok-txt">Passa</span>'
+    frase.innerHTML = `A cor de <strong>${nome}</strong> pode pintar a app toda: fica
+      longe dos alertas, longe do botão Apagar e longe do cinzento de desactivado.`
+  } else {
+    const nomes = maus.map(l => 'do ' + l.nome)
+    const quais = nomes.length > 1
+      ? nomes.slice(0, -1).join(', ') + ' e ' + nomes[nomes.length - 1]
+      : nomes[0]
+    selo.innerHTML = '<span class="pingo" style="background:var(--mau)"></span><span class="mau-txt">Colide</span>'
+    frase.innerHTML = `Pintada a app toda, a cor de <strong>${nome}</strong> fica perto
+      ${quais}. Não é teórico — está à vista no ecrã acima: o <strong>Guardar</strong>
+      ficou da família do <strong>Apagar</strong>, o quadrado do alerta crítico perdeu-se
+      no resto, e o visto de <strong>Contagens em dia</strong> — que quer dizer «está
+      tudo bem» — passou a vermelho.`
+  }
+
+  document.getElementById('paleta').replaceChildren(...[50, 100, 200, 500, 600, 700].map(k => {
+    const b = document.createElement('b')
+    const i = document.createElement('i'); i.style.background = pal[k]
+    b.append(i, document.createTextNode(k))
+    return b
+  }))
+}
+
+pintar()
+</script>
+</body>
+</html>

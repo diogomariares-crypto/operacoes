@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from '
 import { fetchHotels } from './data'
 import type { Department, Hotel } from './types'
 import { useAuth } from './auth'
+import { aplicarCorDoHotel } from './hoteis-cor'
 
 interface AppState {
   hotels: Hotel[]
@@ -50,6 +51,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setDeptState(allowedDepartments[0])
     }
   }, [allowedDepartments.join(','), isAdmin])
+
+  /*
+   * A cor do hotel vive no :root e não em cada página.
+   *
+   * Fica aqui, e não no Shell, porque é daqui que o hotel escolhido vem: uma
+   * página que se abra por link directo apanha a cor certa sem ter de pedir
+   * nada, e nenhum ecrã tem de saber que isto existe.
+   */
+  useEffect(() => {
+    aplicarCorDoHotel(hotelId, hotels.find(h => h.id === hotelId)?.name)
+  }, [hotelId, hotels])
 
   const setHotelId = (id: string) => { localStorage.setItem(LS_HOTEL, id); setHotelIdState(id) }
   const setDept = (d: Department) => { localStorage.setItem(LS_DEPT, d); setDeptState(d) }

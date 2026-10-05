@@ -76,8 +76,11 @@ export default function Shell({ children }: { children: ReactNode }) {
             </span>
           </button>
 
+          {/* O nome do hotel na cor do hotel. É o segundo sinal, para quem olha
+              para o seletor em vez de olhar para a faixa — e o que faz a troca
+              de hotel parecer ter acontecido de facto. */}
           <select
-            className="input h-9 w-auto max-w-[42vw] py-1 text-sm"
+            className="input h-9 w-auto max-w-[42vw] py-1 text-sm font-semibold text-hotel-700"
             value={hotelId ?? ''}
             onChange={e => setHotelId(e.target.value)}
           >
@@ -178,6 +181,16 @@ export default function Shell({ children }: { children: ReactNode }) {
             </nav>
           </div>
         )}
+
+        {/*
+          A faixa do hotel, no rebordo de baixo do cabeçalho.
+          Quatro casas com o mesmo desenho, e lançar a contagem do Tokyo no
+          Gravity é um erro que acontece — e que só se descobre depois. A faixa
+          atravessa o ecrã todo, vê-se sem se ler, e acompanha o cabeçalho
+          quando ele fica fixo. Não substitui o nome do hotel: duplica-o, que é
+          o que se quer num sinal destes.
+        */}
+        <div className="h-1 bg-hotel-500" aria-hidden="true" />
       </header>
 
       <main className="mx-auto max-w-7xl px-3 py-4 pb-24 sm:px-5 sm:py-6">{children}</main>

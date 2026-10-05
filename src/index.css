@@ -8,6 +8,21 @@
   --color-brand-600: #15593d;
   --color-brand-700: #114730;
   --color-gold: #b8860b;
+
+  /*
+    A cor do hotel em que se está. Os valores aqui são o verde da casa, que é o
+    que se vê antes de haver hotel escolhido e em qualquer hotel que não esteja
+    na lista; src/lib/hoteis-cor.ts troca-os no :root ao trocar de hotel.
+    Serve só para identidade — faixa, nome do hotel, barras do gráfico. Nada
+    que queira dizer bem, mal ou urgente usa `hotel`: usa `brand`, `red` ou
+    `amber`, pela razão que está escrita nesse ficheiro.
+  */
+  --color-hotel-50: #ecfdf5;
+  --color-hotel-100: #d1fae5;
+  --color-hotel-200: #a7f3d0;
+  --color-hotel-500: #1a6b4a;
+  --color-hotel-600: #15593d;
+  --color-hotel-700: #114730;
 }
 
 html, body, #root { height: 100%; }
