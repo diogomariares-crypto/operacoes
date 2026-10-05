@@ -1,40 +1,18 @@
-import { HashRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
+import { HashRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AuthProvider, useAuth } from './lib/auth'
 import { AppProvider, useApp } from './lib/appState'
-import { deptGuardado, jaPassouPelaEntrada } from './lib/departamentos'
 import { ToastProvider, Loading } from './components/ui'
 import Shell from './components/Shell'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
-import Entrada from './pages/Entrada'
-import Grupos from './pages/Grupos'
-import GrupoFicha from './pages/Grupo'
-import Horarios from './pages/Horarios'
 import Contagem from './pages/Contagem'
 import Encomendas from './pages/Encomendas'
 import Historico from './pages/Historico'
 import Turno from './pages/Turno'
 import TurnoHistorico from './pages/TurnoHistorico'
-import Parque from './pages/Parque'
-import FbFaturacao from './pages/FbFaturacao'
-import FbImportar from './pages/FbImportar'
-import FbDashboard from './pages/FbDashboard'
-import FbPequenosAlmocos from './pages/FbPequenosAlmocos'
 import MigrarImagens from './pages/MigrarImagens'
-import Conta from './pages/Conta'
-import DesafioMfa from './pages/Mfa'
-import DefinirSenha from './pages/DefinirSenha'
 import Itens from './pages/Itens'
 import Utilizadores from './pages/Utilizadores'
-import Rh from './pages/Rh'
-import RhCustos from './pages/RhCustos'
-import RhDefinicoes from './pages/RhDefinicoes'
-import Lavandaria from './pages/Lavandaria'
-import HkMes from './pages/HkMes'
-import HkMapa from './pages/HkMapa'
-import HkOutsourcing from './pages/HkOutsourcing'
-import HkDefinicoes from './pages/HkDefinicoes'
-import Caixa from './pages/Caixa'
 import Dados from './pages/Dados'
 
 function SoAdmin({ children }: { children: React.ReactNode }) {
@@ -42,44 +20,8 @@ function SoAdmin({ children }: { children: React.ReactNode }) {
   return isAdmin ? <>{children}</> : <Navigate to="/" replace />
 }
 
-function SoPainel({ children }: { children: React.ReactNode }) {
-  const { podeVerPainel } = useAuth()
-  return podeVerPainel ? <>{children}</> : <Navigate to="/" replace />
-}
-
-function SoPa({ children }: { children: React.ReactNode }) {
-  const { podeVerPa } = useAuth()
-  return podeVerPa ? <>{children}</> : <Navigate to="/" replace />
-}
-
-function SoRh({ children }: { children: React.ReactNode }) {
-  const { podeVerRh } = useAuth()
-  return podeVerRh ? <>{children}</> : <Navigate to="/" replace />
-}
-
-function SoLav({ children }: { children: React.ReactNode }) {
-  const { podeVerLavandaria } = useAuth()
-  return podeVerLavandaria ? <>{children}</> : <Navigate to="/" replace />
-}
-
-function SoCaixa({ children }: { children: React.ReactNode }) {
-  const { podeVerCaixa } = useAuth()
-  return podeVerCaixa ? <>{children}</> : <Navigate to="/" replace />
-}
-
-function SoEscrita({ children }: { children: React.ReactNode }) {
-  const { allowedDepartments } = useAuth()
-  return allowedDepartments.length > 0 ? <>{children}</> : <Navigate to="/" replace />
-}
-
-function SoHk({ children }: { children: React.ReactNode }) {
-  const { podeVerHk } = useAuth()
-  return podeVerHk ? <>{children}</> : <Navigate to="/" replace />
-}
-
 function Interior() {
   const { ready, error, hotels } = useApp()
-  const { pathname } = useLocation()
   if (!ready) return <Loading />
   if (error) {
     return (
@@ -100,17 +42,6 @@ function Interior() {
       </div>
     )
   }
-  // A entrada é o ecrã de escolher departamento: não leva o Shell, que é
-  // precisamente o que ela existe para configurar.
-  if (pathname === '/entrada') return <Entrada />
-
-  // Sem departamento escolhido, a app começa pela entrada em vez de despejar
-  // todos os módulos de uma vez. Antes isto só valia para o caminho '/', o que
-  // na prática escondia a entrada de quem reabre a app num link mais fundo —
-  // e essa é a maneira normal de a usar. Passa a valer uma vez por sessão:
-  // escolhido o departamento, ou já vista a entrada, os links abrem direitos.
-  if (!deptGuardado() && !jaPassouPelaEntrada()) return <Navigate to="/entrada" replace />
-
   return (
     <Shell>
       <Routes>
@@ -120,28 +51,8 @@ function Interior() {
         <Route path="/turno" element={<Turno />} />
         <Route path="/turno/:date" element={<Turno />} />
         <Route path="/turno-historico" element={<TurnoHistorico />} />
-        <Route path="/grupos" element={<Grupos />} />
-        <Route path="/grupos/:id" element={<GrupoFicha />} />
-        <Route path="/horarios" element={<Horarios />} />
-        <Route path="/parque" element={<Parque />} />
-        <Route path="/fb" element={<FbFaturacao />} />
-        <Route path="/fb-painel" element={<SoPainel><FbDashboard /></SoPainel>} />
-        <Route path="/fb-pa" element={<SoPa><FbPequenosAlmocos /></SoPa>} />
-        <Route path="/fb-importar" element={<SoAdmin><FbImportar /></SoAdmin>} />
-        <Route path="/rh" element={<SoRh><Rh /></SoRh>} />
-        <Route path="/rh-custos" element={<SoRh><RhCustos /></SoRh>} />
-        <Route path="/rh-definicoes" element={<SoAdmin><RhDefinicoes /></SoAdmin>} />
-        <Route path="/lavandaria" element={<SoLav><Lavandaria /></SoLav>} />
-        {/* o registo dia-a-dia foi absorvido pela tabela do mês */}
-        <Route path="/hk" element={<Navigate to="/hk-mes" replace />} />
-        <Route path="/hk-mes" element={<SoHk><HkMes /></SoHk>} />
-        <Route path="/hk-mapa" element={<SoHk><HkMapa /></SoHk>} />
-        <Route path="/hk-outsourcing" element={<SoHk><HkOutsourcing /></SoHk>} />
-        <Route path="/hk-definicoes" element={<SoAdmin><HkDefinicoes /></SoAdmin>} />
-        <Route path="/caixa" element={<SoCaixa><Caixa /></SoCaixa>} />
-        <Route path="/conta" element={<Conta />} />
         <Route path="/historico" element={<Historico />} />
-        <Route path="/itens" element={<SoEscrita><Itens /></SoEscrita>} />
+        <Route path="/itens" element={<SoAdmin><Itens /></SoAdmin>} />
         <Route path="/utilizadores" element={<SoAdmin><Utilizadores /></SoAdmin>} />
         <Route path="/dados" element={<SoAdmin><Dados /></SoAdmin>} />
         <Route path="/migrar-imagens" element={<SoAdmin><MigrarImagens /></SoAdmin>} />
@@ -152,11 +63,9 @@ function Interior() {
 }
 
 function Raiz() {
-  const { session, loading, precisaCodigo, senhaTemporaria } = useAuth()
+  const { session, loading } = useAuth()
   if (loading) return <Loading label="A iniciar…" />
   if (!session) return <Login />
-  if (precisaCodigo) return <DesafioMfa />
-  if (senhaTemporaria) return <DefinirSenha />
   return (
     <AppProvider>
       <Interior />
