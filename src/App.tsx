@@ -1,11 +1,12 @@
 import { HashRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { AuthProvider, useAuth } from './lib/auth'
 import { AppProvider, useApp } from './lib/appState'
-import { deptGuardado, jaPassouPelaEntrada } from './lib/departamentos'
+
 import { ToastProvider, Loading } from './components/ui'
 import Shell from './components/Shell'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
+import Inicio from './pages/Inicio'
 import Entrada from './pages/Entrada'
 import Grupos from './pages/Grupos'
 import GrupoFicha from './pages/Grupo'
@@ -104,17 +105,19 @@ function Interior() {
   // precisamente o que ela existe para configurar.
   if (pathname === '/entrada') return <Entrada />
 
-  // Sem departamento escolhido, a app começa pela entrada em vez de despejar
-  // todos os módulos de uma vez. Antes isto só valia para o caminho '/', o que
-  // na prática escondia a entrada de quem reabre a app num link mais fundo —
-  // e essa é a maneira normal de a usar. Passa a valer uma vez por sessão:
-  // escolhido o departamento, ou já vista a entrada, os links abrem direitos.
-  if (!deptGuardado() && !jaPassouPelaEntrada()) return <Navigate to="/entrada" replace />
+  // A entrada deixou de ser uma porta por onde se passa: era necessária quando
+  // os onze separadores não cabiam na barra, e agora que são sete famílias a app
+  // abre no Início e mostra logo o dia. Quem quiser encurtar a barra ao seu
+  // departamento continua a chegar lá pelo botão do canto ou pelo menu da conta.
 
   return (
     <Shell>
       <Routes>
-        <Route path="/" element={<Dashboard />} />
+        {/* '/' era o painel do inventário, por ser o módulo mais antigo: quem
+            entrava não via o hotel, via o stock. Agora '/' é o Início e o
+            painel do stock vive em '/stock', dentro da família onde se procura. */}
+        <Route path="/" element={<Inicio />} />
+        <Route path="/stock" element={<Dashboard />} />
         <Route path="/contagem" element={<Contagem />} />
         <Route path="/encomendas" element={<Encomendas />} />
         <Route path="/turno" element={<Turno />} />

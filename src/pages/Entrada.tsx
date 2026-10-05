@@ -4,13 +4,15 @@ import { useAuth } from '../lib/auth'
 import {
   DEPARTAMENTOS, guardarDept, marcarEntradaVista, modulosDoDept,
 } from '../lib/departamentos'
+import { temPaginaVisivel } from '../lib/modulos'
 
 /**
  * A entrada da app: um cartão por departamento.
  *
- * Serve para o telemóvel não abrir com nove separadores em baixo. Escolhe-se
- * por onde se vai trabalhar, fica guardado no aparelho, e a app passa a mostrar
- * só esses módulos — com um «‹» no cabeçalho para voltar aqui.
+ * Deixou de ser obrigatória — a app abre no Início — e passou a ser o sítio
+ * onde se encurta a barra ao que interessa a quem está a trabalhar. Escolhe-se
+ * por onde se vai trabalhar, fica guardado no aparelho, e a barra passa a
+ * mostrar só essas famílias, com um «‹» no cabeçalho para voltar aqui.
  *
  * Só aparecem os departamentos onde a conta tem alguma coisa: um departamento
  * cujas páginas estão todas fechadas a esta pessoa seria um cartão que não abre
@@ -18,13 +20,13 @@ import {
  */
 export default function Entrada() {
   const nav = useNavigate()
-  const { fullName, email, podeVerModulo, podeVerPagina, loading } = useAuth()
+  const { fullName, email, podeVerPagina, loading } = useAuth()
 
   // Vista uma vez, não volta a interromper quem só quer abrir um link.
   useEffect(marcarEntradaVista, [])
 
   const cartoes = DEPARTAMENTOS.map(d => {
-    const modulos = modulosDoDept(d).filter(podeVerModulo)
+    const modulos = modulosDoDept(d).filter(m => temPaginaVisivel(m, podeVerPagina))
     const paginas = modulos.flatMap(m => m.paginas).filter(podeVerPagina)
     // um departamento com módulos definidores só aparece a quem vê algum deles
     const cumpre = !d.essenciais || modulos.some(m => d.essenciais!.includes(m.id))

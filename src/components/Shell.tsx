@@ -1,13 +1,13 @@
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
 import { useApp } from '../lib/appState'
-import { moduloDoCaminho } from '../lib/modulos'
+import { moduloDoCaminho, temPaginaVisivel } from '../lib/modulos'
 import { deptGuardado, esquecerDept, modulosDoDept } from '../lib/departamentos'
 import type { ReactNode } from 'react'
 import { useEffect, useRef, useState } from 'react'
 
 export default function Shell({ children }: { children: ReactNode }) {
-  const { podeVerModulo, podeVerPagina, email, fullName, roles, signOut } = useAuth()
+  const { podeVerPagina, email, fullName, roles, signOut } = useAuth()
   const { hotels, hotelId, setHotelId } = useApp()
   const nav = useNavigate()
   const { pathname } = useLocation()
@@ -35,8 +35,8 @@ export default function Shell({ children }: { children: ReactNode }) {
    * que se está entra sempre, mesmo que seja de outro departamento — senão ir a
    * uma página por link deixava a barra sem nada aceso e sem forma de voltar.
    */
-  const doDept = modulosDoDept(dept).filter(podeVerModulo)
-  const modulos = doDept.some(m => m.id === ativo.id) || !podeVerModulo(ativo)
+  const doDept = modulosDoDept(dept).filter(m => temPaginaVisivel(m, podeVerPagina))
+  const modulos = doDept.some(m => m.id === ativo.id) || !temPaginaVisivel(ativo, podeVerPagina)
     ? doDept
     : [...doDept, ativo]
 
