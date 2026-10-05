@@ -79,8 +79,12 @@ export const MODULOS: Modulo[] = [
     id: 'horarios',
     label: 'Horários',
     icone: '◷',
+    // Fechado a admin enquanto o módulo estiver incompleto. Para o abrir a toda
+    // a casa, tirar este soAdmin e o SoAdmin da rota em src/App.tsx — os cinco
+    // departamentos já o listam, não é preciso mexer em departamentos.ts.
+    soAdmin: true,
     paginas: [
-      { to: '/horarios', label: 'Horários' },
+      { to: '/horarios', label: 'Horários', soAdmin: true },
     ],
   },
   {

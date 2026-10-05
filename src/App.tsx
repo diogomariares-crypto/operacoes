@@ -122,7 +122,9 @@ function Interior() {
         <Route path="/turno-historico" element={<TurnoHistorico />} />
         <Route path="/grupos" element={<Grupos />} />
         <Route path="/grupos/:id" element={<GrupoFicha />} />
-        <Route path="/horarios" element={<Horarios />} />
+        {/* Fechado a admin enquanto o módulo estiver incompleto. Para o abrir a
+            toda a casa, tirar o SoAdmin daqui e o soAdmin em src/lib/modulos.ts. */}
+        <Route path="/horarios" element={<SoAdmin><Horarios /></SoAdmin>} />
         <Route path="/parque" element={<Parque />} />
         <Route path="/fb" element={<FbFaturacao />} />
         <Route path="/fb-painel" element={<SoPainel><FbDashboard /></SoPainel>} />
