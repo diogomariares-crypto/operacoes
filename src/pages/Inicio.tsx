@@ -21,6 +21,9 @@ import { dataExtenso, diaSemanaCurto, dm, dmy, hojeLocal, money } from '../lib/f
    aproximarem: lado a lado numa lista, um âmbar claro e um vermelho vivo
    confundem-se, sobretudo em quem não distingue bem as duas pontas do
    espectro. Daí o vermelho escuro e o âmbar puxado para o ocre. */
+/** Altura, em pixéis, da barra mais alta do gráfico de ocupação. */
+const ALTURA = 150
+
 const NIVEL = {
   critico: { texto: 'text-red-800', fundo: 'bg-red-800' },
   aviso: { texto: 'text-amber-700', fundo: 'bg-amber-700' },
@@ -166,32 +169,56 @@ export default function Inicio() {
             </p>
           ) : (
             <>
-              <div className="mt-5 flex h-40 items-end gap-2">
-                {d.previsao.map(p => {
-                  const alt = p.ocupacao === null ? 0 : (p.ocupacao / maxOcup) * 100
+              {/*
+                Cada barra é a casa toda e enche-se até à ocupação, em vez de ser
+                uma barra solta a partir do zero. A ocupação aqui anda sempre
+                entre 89% e 99%, e barras desde o zero davam sete blocos iguais:
+                verdadeiros e inúteis. Assim o que salta à vista é o vazio no
+                topo — que é a pergunta de quem olha, quantos quartos sobram.
+
+                As alturas vão em pixéis e não em percentagem porque a coluna é
+                alinhada ao fundo e não tem altura definida; uma percentagem sobre
+                altura indefinida resolve-se como zero e o gráfico saía vazio.
+              */}
+              {/* O gráfico e a tabela partilham o mesmo contentor com barra de
+                  deslocamento e a mesma coluna vazia à esquerda, senão os dias da
+                  tabela não ficam debaixo das respetivas barras — e um gráfico
+                  desalinhado da sua legenda faz ler o dia errado. */}
+              <div className="mt-5 overflow-x-auto">
+               <div className="min-w-[34rem]">
+                <div className="flex items-end">
+                  <div className="w-24 shrink-0" aria-hidden="true" />
+                  {d.previsao.map(p => {
+                  const alt = p.ocupacao === null ? 0 : Math.round((p.ocupacao / maxOcup) * ALTURA)
                   const destaque = p.ocupacao !== null && (p.ocupacao === cheio || p.ocupacao === vazio)
+                  const livres = p.quartos !== null && p.ocupacao
+                    ? Math.max(0, Math.round(p.quartos / (p.ocupacao / 100)) - p.quartos)
+                    : null
                   return (
-                    <div key={p.data} className="flex min-w-0 flex-1 flex-col justify-end">
-                      {destaque && (
-                        <div className="mb-1 text-center text-xs font-semibold tabular-nums text-slate-600">
-                          {Math.round(p.ocupacao as number)}%
-                        </div>
-                      )}
+                    <div key={p.data} className="flex min-w-0 flex-1 flex-col justify-end px-1">
+                      <div className="mb-1 text-center text-xs font-semibold tabular-nums text-slate-600">
+                        {destaque ? `${Math.round(p.ocupacao as number)}%` : ' '}
+                      </div>
                       <div
-                        className="rounded-t bg-brand-500"
-                        style={{ height: `${alt}%` }}
-                        title={`${dmy(p.data)} · ${p.ocupacao ?? '—'}% · ${p.quartos ?? '—'} quartos`}
-                      />
+                        className="relative rounded bg-brand-50"
+                        style={{ height: `${ALTURA}px` }}
+                        title={`${dmy(p.data)} · ${p.ocupacao ?? '—'}% · ${p.quartos ?? '—'} ocupados`
+                          + (livres !== null ? ` · ${livres} livres` : '')}
+                      >
+                        <div
+                          className="absolute inset-x-0 bottom-0 rounded bg-brand-500"
+                          style={{ height: `${alt}px` }}
+                        />
+                      </div>
                     </div>
                   )
                 })}
-              </div>
+                </div>
 
-              <div className="mt-3 overflow-x-auto">
-                <table className="w-full min-w-[30rem] text-xs">
+                <table className="mt-3 w-full table-fixed text-xs">
                   <thead>
                     <tr className="text-slate-500">
-                      <th className="py-1 text-left font-medium"> </th>
+                      <th className="w-24 py-1 text-left font-medium"> </th>
                       {d.previsao.map(p => (
                         <th key={p.data} className="py-1 text-center font-medium">
                           {diaSemanaCurto(p.data)}<br />
@@ -231,6 +258,7 @@ export default function Inicio() {
                     </tr>
                   </tbody>
                 </table>
+               </div>
               </div>
             </>
           )}
