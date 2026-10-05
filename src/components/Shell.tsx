@@ -85,18 +85,21 @@ export default function Shell({ children }: { children: ReactNode }) {
           </select>
 
           {/* separadores de módulo */}
-          <nav className="ml-auto hidden items-center gap-1 rounded-xl bg-slate-100 p-1 md:flex">
+          {/* Dez separadores: sem os icones cabem todos ate aos 1024px, e abaixo
+              disso a barra desliza em vez de empurrar o hotel e a conta para fora.
+              Os icones continuam a servir os cartoes da entrada. */}
+          <nav className="ml-auto hidden min-w-0 items-center gap-0.5 overflow-x-auto rounded-xl bg-slate-100 p-1 md:flex">
             {modulos.map(m => {
               const sel = m.id === ativo.id
               return (
                 <button
                   key={m.id}
                   onClick={() => nav(m.paginas[0].to)}
-                  className={`rounded-lg px-3.5 py-1.5 text-sm font-medium transition ${
+                  className={`shrink-0 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium transition ${
                     sel ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'
                   }`}
                 >
-                  <span className="mr-1.5 opacity-70">{m.icone}</span>{m.label}
+                  {m.curto ?? m.label}
                 </button>
               )
             })}

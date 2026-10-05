@@ -35,26 +35,32 @@ export interface Departamento {
 export const DEPARTAMENTOS: Departamento[] = [
   // os grupos entram em todos os departamentos: é a mesma ficha, e o que muda
   // é a nota que cada um lá escreve
-  // O Início entra em todos: é a porta da app e não faz sentido escondê-lo de
-  // ninguém. As restantes famílias mudam com o departamento.
-  { id: 'fo', label: 'Receção', icone: '◨', tom: 'bg-brand-50 text-brand-700',
-    desc: 'O dia, grupos, parque, faturação e contagens',
-    modulos: ['inicio', 'dia', 'dinheiro', 'stock', 'pessoas'] },
-  { id: 'hsk', label: 'Housekeeping', icone: '⌂', tom: 'bg-blue-50 text-blue-700',
-    desc: 'Produção do mês, mapa, outsourcing e rouparia',
-    modulos: ['inicio', 'quartos', 'dia', 'stock', 'pessoas'] },
-  { id: 'fb', label: 'F&B', icone: '€', tom: 'bg-amber-50 text-amber-700',
-    desc: 'Faturação do dia, pequenos-almoços, grupos e stock',
-    modulos: ['inicio', 'dinheiro', 'dia', 'stock', 'pessoas'] },
+  // Os três comuns — Início, Passagem de turno e Stock — entram em todos: não
+  // são de ninguém e fazem falta a toda a gente. O que muda é o departamento.
+  { id: 'fo', label: 'Front Office', icone: '◨', tom: 'bg-brand-50 text-brand-700',
+    desc: 'Grupos, parque, passagem de turno e contagens',
+    modulos: ['inicio', 'turnos', 'fo', 'stock'] },
+  { id: 'hsk', label: 'Housekeeping', icone: '▦', tom: 'bg-blue-50 text-blue-700',
+    desc: 'Produção do mês, mapa, outsourcing e contagens',
+    modulos: ['inicio', 'turnos', 'hsk', 'stock'] },
+  { id: 'fb', label: 'F&B', icone: '♨', tom: 'bg-amber-50 text-amber-700',
+    desc: 'Faturação do dia, pequenos-almoços e contagens',
+    modulos: ['inicio', 'turnos', 'fb', 'stock'] },
   { id: 'man', label: 'Manutenção', icone: '⬓', tom: 'bg-violet-50 text-violet-700',
-    desc: 'Parque, pendentes do dia e material de reposição',
-    modulos: ['inicio', 'dia', 'stock', 'quartos'] },
+    desc: 'Parque, pendentes do dia e material',
+    modulos: ['inicio', 'turnos', 'man', 'stock'] },
+  { id: 'conta', label: 'Contabilidade', icone: '€', tom: 'bg-emerald-50 text-emerald-700',
+    desc: 'Caixa, custos de lavandaria e faturação',
+    modulos: ['inicio', 'turnos', 'conta', 'fb', 'stock'] },
+  { id: 'rh', label: 'Recursos Humanos', icone: '☺', tom: 'bg-rose-50 text-rose-700',
+    desc: 'Pessoas, custos e horários',
+    modulos: ['inicio', 'turnos', 'rh'] },
   // a direção tem mesmo de ter tudo: o cartão promete-o e é onde se vai buscar
-  // o painel, a rouparia e o inventário quando é preciso olhar para o conjunto
+  // a caixa, o pessoal e o inventário quando é preciso olhar para o conjunto
   { id: 'dir', label: 'Direção', icone: '⛭', tom: 'bg-slate-100 text-slate-700',
-    desc: 'Tudo — caixa, pessoal, custos e acessos',
-    modulos: ['inicio', 'dia', 'quartos', 'dinheiro', 'stock', 'pessoas', 'gestao'],
-    essenciais: ['dinheiro', 'pessoas', 'gestao'] },
+    desc: 'Tudo — todos os departamentos e os acessos',
+    modulos: ['inicio', 'turnos', 'stock', 'fo', 'hsk', 'fb', 'man', 'conta', 'rh', 'gestao'],
+    essenciais: ['conta', 'rh', 'gestao'] },
 ]
 
 const CHAVE = 'entrada.departamento'
