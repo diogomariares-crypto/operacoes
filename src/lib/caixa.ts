@@ -81,6 +81,28 @@ export interface Envelope {
   /** Troco que não coube no envelope e ficou na caixa para o turno seguinte. */
   transporte: number
   nota: string | null
+  /**
+   * Corte de mês: não é um fecho físico, é o fim de mês a cortar um turno que o
+   * atravessa.
+   *
+   * Um turno pode começar a 28 de setembro e acabar a 5 de outubro. O dinheiro
+   * foi contado uma vez, no fim — mas os pagamentos são de dois meses, e cada
+   * mês tem de responder pelo que recebeu. Então o turno fica registado em dois
+   * fechos, cortados à meia-noite da mudança de mês: o de setembro leva os
+   * pagamentos de setembro, o de outubro os seus.
+   *
+   * Num corte não se contou nada, porque ninguém foi à caixa à meia-noite. Por
+   * isso o contado é zero e **todo** o dinheiro passa adiante: o transporte de
+   * um corte não é o que está guardado na linha, é `abertura + recebido −
+   * faturas`, calculado na hora. Tem de ser calculado e não guardado porque os
+   * pagamentos costumam ser importados depois de o fecho existir, e um número
+   * guardado ficaria a mentir em silêncio — que é o pior que um número de
+   * dinheiro pode fazer.
+   *
+   * Em consequência, um corte nunca tem diferença própria: a do turno inteiro
+   * aparece no fecho que levou a contagem, o último.
+   */
+  corte: boolean
 }
 
 export interface Deposito {
@@ -134,6 +156,98 @@ export function recebidoDoTurno(recebido: Recebido[], inicio: string, fim: strin
   return recebido.filter(r => dentroDoTurno(r.momento, inicio, fim))
 }
 
+/* --------------------------------------------------- o mês corta os turnos */
+
+/** '2026-12' → '2027-01'. Em texto, que é como as horas da caixa andam. */
+const proximoMes = (ym: string) => {
+  const [a, m] = ym.split('-').map(Number)
+  return m === 12 ? `${a + 1}-01` : `${a}-${String(m + 1).padStart(2, '0')}`
+}
+
+/** Um dia para cada lado. Ao meio-dia, para nenhuma hora de verão mexer no dia. */
+function desviar(dia: string, dias: number) {
+  const d = new Date(`${dia}T12:00:00`)
+  d.setDate(d.getDate() + dias)
+  return d.toISOString().slice(0, 10)
+}
+
+/**
+ * As meias-noites de mudança de mês dentro de [início, fim[.
+ *
+ * Um turno de 28/09 a 05/10 dá uma: 01/10 às 00:00. Um turno que acabe
+ * exactamente à meia-noite de 01/10 não dá nenhuma — essa meia-noite já é do
+ * turno seguinte, pela mesma regra do intervalo meio-aberto que decide a quem
+ * pertence um pagamento.
+ */
+export function cortesDeMes(inicio: string, fim: string): string[] {
+  const i = instante(inicio), f = instante(fim)
+  const cortes: string[] = []
+  let ym = proximoMes(i.slice(0, 7))
+  // o travão são 1200 meses: um turno de cem anos não existe, e um ciclo infinito sim
+  for (let n = 0; n < 1200; n++) {
+    const c = `${ym}-01T00:00:00`
+    if (c >= f) break
+    if (c > i) cortes.push(c)
+    ym = proximoMes(ym)
+  }
+  return cortes
+}
+
+/**
+ * O dia em que um fecho é arrumado: o dia a que pertence o último instante que
+ * ele cobre.
+ *
+ * Para um turno que acaba às 07:00 de 01/10 é 01/10, como sempre foi. Para um
+ * corte que acaba à meia-noite de 01/10 é 30/09 — senão o fecho de setembro ia
+ * aparecer no mês de outubro, que é exactamente o que se está a resolver.
+ */
+export const diaDoFecho = (fim: string) => {
+  const t = instante(fim)
+  return t.slice(11) === '00:00:00' ? desviar(t.slice(0, 10), -1) : t.slice(0, 10)
+}
+
+/** Um dos fechos em que um turno se parte. */
+export interface Segmento {
+  inicio: string
+  fim: string
+  dia: string
+  corte: boolean
+  valor: number
+  denominacoes: Record<string, number>
+  transporte: number
+}
+
+/**
+ * Parte um turno nos limites de mês que ele atravessa.
+ *
+ * A contagem física fica toda no **último** segmento, porque foi lá que ela
+ * aconteceu: é esse que tem o valor, as denominações e o troco que ficou para o
+ * turno seguinte. Os segmentos anteriores são cortes — ver a nota em
+ * `Envelope.corte`.
+ *
+ * Um turno que não atravessa mês nenhum devolve um segmento só, igual ao que
+ * entrou. Nada muda para o caso normal, que é a esmagadora maioria.
+ */
+export function partirPorMes(e: {
+  inicio: string; fim: string
+  valor: number; denominacoes: Record<string, number>; transporte: number
+}): Segmento[] {
+  const cortes = cortesDeMes(e.inicio, e.fim)
+  const limites = [instante(e.inicio), ...cortes, instante(e.fim)]
+  return limites.slice(0, -1).map((inicio, k) => {
+    const fim = limites[k + 1]
+    const ultimo = k === limites.length - 2
+    return {
+      inicio, fim, dia: diaDoFecho(fim), corte: !ultimo,
+      valor: ultimo ? e.valor : 0,
+      denominacoes: ultimo ? e.denominacoes : {},
+      // num corte o transporte é calculado na hora; guarda-se zero para a linha
+      // não sugerir um número que não é o que vale
+      transporte: ultimo ? e.transporte : 0,
+    }
+  })
+}
+
 /* ---------------------------------------------------------------- o envelope */
 
 /**
@@ -161,7 +275,7 @@ export interface ContasDoEnvelope {
 }
 
 export function contasDoEnvelope(
-  env: Pick<Envelope, 'inicio' | 'fim' | 'valor' | 'transporte'>,
+  env: Pick<Envelope, 'inicio' | 'fim' | 'valor' | 'transporte'> & { corte?: boolean },
   abertura: number,
   recebido: Recebido[],
   faturas: Saida[],
@@ -169,6 +283,22 @@ export function contasDoEnvelope(
   const doTurno = recebidoDoTurno(recebido, env.inicio, env.fim)
   const r = somar(doTurno, x => x.valor)
   const f = somar(faturas, x => x.valor)
+
+  /*
+   * Num corte de mês não houve contagem: ninguém foi à caixa à meia-noite. Tudo
+   * o que lá estava continua lá e passa ao fecho seguinte, por isso o esperado é
+   * zero e não há diferença a apurar — a do turno inteiro sai no fecho que levou
+   * a contagem. Ver a nota em `Envelope.corte`.
+   */
+  if (env.corte) {
+    return {
+      abertura: cents(abertura), recebido: r, faturas: f,
+      transporte: cents(abertura + r - f),
+      esperado: 0, contado: 0, diferenca: 0, certo: true,
+      nPagamentos: doTurno.length, nFaturas: faturas.length,
+    }
+  }
+
   const esperado = cents(abertura + r - f - env.transporte)
   const diferenca = cents(env.valor - esperado)
   return {
@@ -191,6 +321,16 @@ export interface LinhaDoMes {
 
 export interface Balanco {
   linhas: LinhaDoMes[]
+  /**
+   * Recebido em dinheiro **neste mês**, e só neste.
+   *
+   * É este o número do mês. O `recebido` ao lado é mais largo de propósito: as
+   * contas de um turno que atravessa a meia-noite precisam de pagamentos de
+   * fora do mês, e durante algum tempo o ecrã mostrou essa soma larga — em
+   * outubro apareciam os 45,15 € recebidos a 30 de setembro.
+   */
+  recebidoDoMes: number
+  /** Soma de tudo o que foi carregado, incluindo os dias de fora que os turnos precisam. */
   recebido: number
   saidas: number
   contado: number
@@ -209,34 +349,69 @@ export interface Balanco {
   sobrepostos: [Envelope, Envelope][]
 }
 
-export function balanco(
-  recebido: Recebido[], saidas: Saida[], envelopes: Envelope[], depositos: Deposito[],
-  /** Último envelope antes deste mês: o que deixou na caixa é a abertura do primeiro. */
-  anterior?: Envelope | null,
-): Balanco {
-  const ordenados = [...envelopes]
-    .sort((a, b) => instante(a.inicio).localeCompare(instante(b.inicio)))
+export interface EntradaDoBalanco {
+  /** O mês que se está a ver, 'AAAA-MM'. Decide o que é «deste mês». */
+  mes: string
+  /**
+   * Pagamentos. Vem de propósito mais largo do que o mês: as contas de um turno
+   * que atravessa a meia-noite precisam de pagamentos de fora dele. O número do
+   * mês sai de `recebidoDoMes`, que filtra; nunca desta lista inteira.
+   */
+  recebido: Recebido[]
+  saidas: Saida[]
+  envelopes: Envelope[]
+  depositos: Deposito[]
+  /**
+   * Os fechos imediatamente antes do mês, do mais antigo para o mais recente.
+   *
+   * Um só não bastava. O troco que um corte de mês passa adiante é calculado, e
+   * para o calcular é preciso saber com quanto ele abriu — ou seja, o que o
+   * fecho antes dele deixou. Com uma lista, a corrente arranca num fecho
+   * físico, que tem o troco guardado, e desce até ao mês.
+   */
+  anteriores?: Envelope[]
+  /** Faturas atribuídas a esses fechos anteriores. Entram nas contas deles, não no mês. */
+  saidasAnteriores?: Saida[]
+}
+
+export function balanco(e: EntradaDoBalanco): Balanco {
+  const { mes, recebido, saidas, envelopes, depositos } = e
+  const porInicio = (a: Envelope, b: Envelope) =>
+    instante(a.inicio).localeCompare(instante(b.inicio))
+  const ordenados = [...envelopes].sort(porInicio)
+  const antes = [...(e.anteriores ?? [])].sort(porInicio)
+
   const porEnvelope = new Map<string, Saida[]>()
-  for (const s of saidas) {
+  for (const s of [...saidas, ...(e.saidasAnteriores ?? [])]) {
     if (!s.envelope_id) continue
     const l = porEnvelope.get(s.envelope_id) ?? []
     l.push(s); porEnvelope.set(s.envelope_id, l)
   }
 
+  /*
+   * A corrente corre sobre os fechos anteriores e os do mês, de seguida, mas só
+   * os do mês aparecem na tabela. Os anteriores servem para a abertura do
+   * primeiro turno do mês chegar certa — e o acumulado começa a contar no mês,
+   * porque a diferença dos meses passados já foi fechada lá.
+   */
   const linhas: LinhaDoMes[] = []
-  let abertura = anterior?.transporte ?? 0
+  let abertura = 0
   let acumulado = 0
-  for (const env of ordenados) {
+  for (const env of [...antes, ...ordenados]) {
     const faturas = porEnvelope.get(env.id) ?? []
     // a abertura escrita à mão manda; sem ela, o troco do turno anterior
     const contas = contasDoEnvelope(env, env.abertura ?? abertura, recebido, faturas)
+    // num corte vale o transporte calculado, que leva o dinheiro todo adiante
+    abertura = contas.transporte
+    if (antes.includes(env)) continue
     acumulado = cents(acumulado + contas.diferenca)
     linhas.push({ envelope: env, contas, faturas, acumulado })
-    abertura = env.transporte
   }
 
+  const doMes = recebido.filter(r => r.dia.slice(0, 7) === mes)
+
   const cobertos = new Set<string>()
-  for (const env of ordenados)
+  for (const env of [...antes, ...ordenados])
     for (const r of recebidoDoTurno(recebido, env.inicio, env.fim)) cobertos.add(r.id)
 
   const sobrepostos: [Envelope, Envelope][] = []
@@ -246,6 +421,7 @@ export function balanco(
 
   return {
     linhas,
+    recebidoDoMes: somar(doMes, x => x.valor),
     recebido: somar(recebido, x => x.valor),
     saidas: somar(saidas, x => x.valor),
     contado: somar(envelopes, x => x.valor),
@@ -255,7 +431,9 @@ export function balanco(
     envelopes: envelopes.length,
     faturas: saidas.length,
     faturasSoltas: saidas.filter(s => !s.envelope_id),
-    foraDeTurno: recebido.filter(r => !cobertos.has(r.id)),
+    // só os deste mês: um pagamento de fora da janela não é problema de quem
+    // está a fechar este mês, e aparecer ali era alarme falso
+    foraDeTurno: doMes.filter(r => !cobertos.has(r.id)),
     sobrepostos,
   }
 }
@@ -374,39 +552,72 @@ export async function fetchCaixas(): Promise<Caixa[]> {
   return (data ?? []) as Caixa[]
 }
 
-/** Um dia para cada lado, para os turnos que atravessam a meia-noite do mês. */
-const desviar = (dia: string, dias: number) => {
-  const d = new Date(`${dia}T12:00:00`)
-  d.setDate(d.getDate() + dias)
-  return d.toISOString().slice(0, 10)
-}
+/**
+ * Quantos fechos antes do mês se trazem para a corrente de aberturas arrancar.
+ *
+ * Um bastava quando todos os fechos eram físicos e traziam o troco guardado.
+ * Com cortes de mês, o troco de um corte é calculado a partir da sua abertura,
+ * e essa vem do fecho anterior — por isso é preciso recuar até encontrar um
+ * fecho físico. Seis dá margem de sobra: seriam seis meses seguidos de turnos a
+ * atravessar o fim do mês.
+ */
+const FECHOS_ANTES = 6
+
+const env = (x: Record<string, unknown>) => ({
+  ...x, valor: num(x.valor), transporte: num(x.transporte),
+  denominacoes: x.denominacoes ?? {}, corte: x.corte === true,
+}) as Envelope
 
 export async function fetchMes(caixaId: string, de: string, ate: string) {
-  const [r, s, e, d, ant] = await Promise.all([
-    // o turno da noite de 31 vai buscar pagamentos do dia 1 seguinte, e vice-versa
-    supabase.from('cx_recebido').select('*').eq('caixa_id', caixaId)
-      .gte('dia', desviar(de, -1)).lte('dia', desviar(ate, 1)).order('momento'),
+  // primeiro os fechos, porque são eles que dizem de que pagamentos se precisa
+  const [s, e, d, ant] = await Promise.all([
     supabase.from('cx_saidas').select('*').eq('caixa_id', caixaId)
       .gte('dia', de).lte('dia', ate).order('dia'),
     supabase.from('cx_envelopes').select('*').eq('caixa_id', caixaId)
       .gte('dia', de).lte('dia', ate).order('inicio'),
     supabase.from('cx_depositos').select('*').eq('caixa_id', caixaId)
       .gte('dia', de).lte('dia', ate).order('dia'),
-    // o último turno antes do mês: o que deixou na caixa abre o primeiro turno
     supabase.from('cx_envelopes').select('*').eq('caixa_id', caixaId)
-      .lt('dia', de).order('inicio', { ascending: false }).limit(1).maybeSingle(),
+      .lt('dia', de).order('inicio', { ascending: false }).limit(FECHOS_ANTES),
   ])
-  for (const x of [r, s, e, d]) if (x.error) throw x.error
-  const env = (x: Record<string, unknown>) => ({
-    ...x, valor: num(x.valor), transporte: num(x.transporte),
-    denominacoes: x.denominacoes ?? {},
-  }) as Envelope
+  for (const x of [s, e, d, ant] as { error: unknown }[]) if (x.error) throw x.error
+
+  const envelopes = (e.data ?? []).map(env)
+  const anteriores = (ant.data ?? []).map(env).reverse()
+
+  /*
+   * A janela dos pagamentos é o mês mais tudo o que os fechos à vista precisam.
+   *
+   * Antes era um dia fixo para cada lado, o que chegava para um turno de noite
+   * e não chegava para um turno de 28/09 a 05/10 — as contas de outubro ficavam
+   * sem os pagamentos de setembro. Agora a janela é a união do mês com o
+   * intervalo de cada fecho, e o dia extra de cada lado fica como folga.
+   */
+  const todos = [...anteriores, ...envelopes]
+  const limite = (f: (a: string, b: string) => string, base: string, campo: 'inicio' | 'fim') =>
+    todos.reduce((acc, x) => f(acc, instante(x[campo]).slice(0, 10)), base)
+  const desde = desviar(limite((a, b) => (b < a ? b : a), de, 'inicio'), -1)
+  const until = desviar(limite((a, b) => (b > a ? b : a), ate, 'fim'), 1)
+
+  const [r, sa] = await Promise.all([
+    supabase.from('cx_recebido').select('*').eq('caixa_id', caixaId)
+      .gte('dia', desde).lte('dia', until).order('momento'),
+    // as faturas dos fechos anteriores: entram nas contas deles, não nas do mês
+    anteriores.length
+      ? supabase.from('cx_saidas').select('*').eq('caixa_id', caixaId)
+          .in('envelope_id', anteriores.map(x => x.id))
+      : Promise.resolve({ data: [], error: null }),
+  ])
+  for (const x of [r, sa] as { error: unknown }[]) if (x.error) throw x.error
+
+  const valor = (x: Record<string, unknown>) => ({ ...x, valor: num(x.valor) })
   return {
-    recebido: (r.data ?? []).map(x => ({ ...x, valor: num(x.valor) })) as Recebido[],
-    saidas: (s.data ?? []).map(x => ({ ...x, valor: num(x.valor) })) as Saida[],
-    envelopes: (e.data ?? []).map(env),
-    depositos: (d.data ?? []).map(x => ({ ...x, valor: num(x.valor) })) as Deposito[],
-    anterior: ant.data ? env(ant.data) : null,
+    recebido: (r.data ?? []).map(valor) as Recebido[],
+    saidas: (s.data ?? []).map(valor) as Saida[],
+    envelopes,
+    depositos: (d.data ?? []).map(valor) as Deposito[],
+    anteriores,
+    saidasAnteriores: (sa.data ?? []).map(valor) as Saida[],
   }
 }
 
@@ -514,23 +725,77 @@ export async function guardarSaida(id: string, patch: Partial<Saida>) {
  * deixarem de estar seleccionadas voltam a ficar soltas — a fatura não se perde,
  * só deixa de pertencer a este turno.
  */
+/**
+ * A fatura vai para o segmento do seu mês.
+ *
+ * Uma fatura tem dia mas não tem hora, por isso não se pode pôr num intervalo
+ * ao minuto — e também não é preciso: o que se quer é que cada mês responda
+ * pelas suas faturas. O que não bater em nenhum mês fica no último segmento,
+ * que é o que levou a contagem.
+ */
+function segmentoDaFatura(dia: string, segmentos: Segmento[]) {
+  const k = segmentos.findIndex(s => s.dia.slice(0, 7) === dia.slice(0, 7))
+  return k === -1 ? segmentos.length - 1 : k
+}
+
 export async function juntarEnvelope(
   caixaId: string, e: Omit<Envelope, 'id'>, faturas: string[], por: string | null,
+  saidas: Pick<Saida, 'id' | 'dia'>[] = [],
 ) {
-  const { data, error } = await supabase.from('cx_envelopes')
-    .insert({ ...e, caixa_id: caixaId, atualizado_por: por }).select('id').single()
-  if (error) throw error
-  await atribuirFaturas(data.id as string, faturas, caixaId)
-  return data.id as string
+  const segmentos = partirPorMes(e)
+  const ids: string[] = []
+  for (const s of segmentos) {
+    const { data, error } = await supabase.from('cx_envelopes').insert({
+      caixa_id: caixaId, atualizado_por: por,
+      responsavel: e.responsavel, nota: e.nota,
+      // a abertura escrita à mão é do princípio do turno, logo do primeiro
+      // segmento; os seguintes abrem com o que o anterior deixou
+      abertura: ids.length === 0 ? e.abertura : null,
+      ...s,
+    }).select('id').single()
+    if (error) throw error
+    ids.push(data.id as string)
+  }
+  await espalharFaturas(ids, segmentos, faturas, saidas, caixaId)
+  return ids[ids.length - 1]
 }
 
 export async function guardarEnvelope(
   id: string, caixaId: string, e: Omit<Envelope, 'id'>, faturas: string[], por: string | null,
+  saidas: Pick<Saida, 'id' | 'dia'>[] = [],
 ) {
+  const segmentos = partirPorMes(e)
+  /*
+   * Se o turno editado passou a atravessar o fim do mês, deixa de caber numa
+   * linha. Soltam-se as faturas, apaga-se a linha e gravam-se os segmentos — o
+   * conteúdo não se perde, muda de forma. Fora desse caso, actualiza-se no
+   * lugar como sempre.
+   */
+  if (segmentos.length > 1) {
+    await atribuirFaturas(id, [], caixaId)
+    const { error } = await supabase.from('cx_envelopes').delete().eq('id', id)
+    if (error) throw error
+    return juntarEnvelope(caixaId, e, faturas, por, saidas)
+  }
   const { error } = await supabase.from('cx_envelopes')
-    .update({ ...e, atualizado_por: por }).eq('id', id)
+    .update({ ...e, ...segmentos[0], atualizado_por: por }).eq('id', id)
   if (error) throw error
   await atribuirFaturas(id, faturas, caixaId)
+  return id
+}
+
+/** Reparte as faturas escolhidas pelos segmentos, cada uma no mês a que pertence. */
+async function espalharFaturas(
+  ids: string[], segmentos: Segmento[], faturas: string[],
+  saidas: Pick<Saida, 'id' | 'dia'>[], caixaId: string,
+) {
+  if (ids.length === 1) { await atribuirFaturas(ids[0], faturas, caixaId); return }
+  const porSegmento = ids.map<string[]>(() => [])
+  for (const f of faturas) {
+    const dia = saidas.find(s => s.id === f)?.dia
+    porSegmento[dia ? segmentoDaFatura(dia, segmentos) : ids.length - 1].push(f)
+  }
+  for (let k = 0; k < ids.length; k++) await atribuirFaturas(ids[k], porSegmento[k], caixaId)
 }
 
 async function atribuirFaturas(envelopeId: string, faturas: string[], caixaId: string) {

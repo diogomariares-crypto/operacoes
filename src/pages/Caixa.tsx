@@ -7,11 +7,11 @@ import {
   apagarVarios, juntarDeposito, juntarEnvelope, juntarRecebidoManual, juntarSaida, juntarSaidas,
   lerColagem,
   instante, lerRelatorioPms, linkDaFatura, recebidoDoTurno, somaDenominacoes, TOLERANCIA,
-  descreveDiferenca, veredicto,
+  descreveDiferenca, veredicto, partirPorMes, diaDoFecho,
   type Balanco, type Caixa, type Deposito, type Envelope, type LinhaDoMes,
   type Recebido, type Saida,
 } from '../lib/caixa'
-import { dmy, lastDayOfMonth, money, todayISO } from '../lib/format'
+import { dmy, dmyHm, lastDayOfMonth, money, todayISO } from '../lib/format'
 import { Loading, Modal, NumInput, Spinner, StatCard, useToast } from '../components/ui'
 import { ehMes, mesCorrente, useLembrado } from '../lib/lembrar'
 import { useSeleccao } from '../lib/seleccao'
@@ -19,7 +19,10 @@ import { Caixa as CaixaEscolha } from '../components/BulkEdit'
 
 type Dados = {
   recebido: Recebido[]; saidas: Saida[]; envelopes: Envelope[]
-  depositos: Deposito[]; anterior: Envelope | null
+  depositos: Deposito[]
+  /** Os fechos antes do mes, para a corrente de aberturas arrancar — ver fetchMes. */
+  anteriores: Envelope[]
+  saidasAnteriores: Saida[]
 }
 
 /**
@@ -90,8 +93,20 @@ export default function CaixaPage() {
 
   const caixa = caixas.find(c => c.id === caixaId)
   const b: Balanco | null = useMemo(
-    () => (d ? balanco(d.recebido, d.saidas, d.envelopes, d.depositos, d.anterior) : null),
-    [d])
+    () => (d ? balanco({
+      mes, recebido: d.recebido, saidas: d.saidas, envelopes: d.envelopes,
+      depositos: d.depositos, anteriores: d.anteriores,
+      saidasAnteriores: d.saidasAnteriores,
+    }) : null),
+    [d, mes])
+
+  /*
+   * Os pagamentos deste mês. A lista e o cartão do topo mostram estes; as
+   * contas dos turnos usam `d.recebido`, que vem mais largo de propósito porque
+   * um turno pode atravessar a meia-noite — ver fetchMes.
+   */
+  const doMes = useMemo(
+    () => (d?.recebido ?? []).filter(r => r.dia.slice(0, 7) === mes), [d, mes])
 
   if (erro) {
     return (
@@ -106,7 +121,7 @@ export default function CaixaPage() {
   const certo = estaCerto(b)
   const ultimo = d.envelopes.length
     ? [...d.envelopes].sort((a, x) => x.fim.localeCompare(a.fim))[0]
-    : d.anterior
+    : d.anteriores[d.anteriores.length - 1] ?? null
 
   return (
     <div className="space-y-4">
@@ -139,8 +154,8 @@ export default function CaixaPage() {
 
       {/* ---------------------------------------------------------- balanço */}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-        <StatCard label="Recebido em dinheiro" value={money(b.recebido)}
-                  hint={`${d.recebido.length} ${d.recebido.length === 1 ? 'registo' : 'registos'}`} />
+        <StatCard label="Recebido em dinheiro" value={money(b.recebidoDoMes)}
+                  hint={`${doMes.length} ${doMes.length === 1 ? 'registo' : 'registos'}`} />
         <StatCard label="Pago em faturas" value={money(b.saidas)}
                   hint={`${b.faturas} ${b.faturas === 1 ? 'fatura' : 'faturas'}`} />
         <StatCard label="Contado nos envelopes" value={money(b.contado)}
@@ -291,7 +306,7 @@ export default function CaixaPage() {
 
       {/* ------------------------------------------------------- recebido */}
       <Recebimentos
-        caixa={caixa} recebido={d.recebido} total={b.recebido}
+        caixa={caixa} recebido={doMes} total={b.recebidoDoMes}
         onImportado={carregar}
         onJuntarManual={async (dia, valor, nota) => {
           await juntarRecebidoManual(caixaId, dia, valor, nota); carregar()
@@ -308,9 +323,7 @@ export default function CaixaPage() {
           saidas={d.saidas}
           /* o turno novo começa onde o anterior acabou: sem buracos nem sobreposições */
           inicioSugerido={aEditar === 'novo' ? (ultimo ? paraInput(ultimo.fim) : `${mes}-01T00:00`) : null}
-          abertura={aEditar === 'novo'
-            ? (ultimo?.transporte ?? 0)
-            : aberturaDe(b, aEditar.id, d.anterior)}
+          abertura={aEditar === 'novo' ? aberturaParaNovo(b, ultimo) : aberturaDe(b, aEditar.id)}
           onFechar={() => setAEditar(null)}
           onGravado={() => { setAEditar(null); carregar() }}
         />
@@ -337,11 +350,22 @@ export default function CaixaPage() {
   )
 }
 
-/** O que o turno anterior a este deixou na caixa. */
-function aberturaDe(b: Balanco, id: string, anterior: Envelope | null) {
-  const i = b.linhas.findIndex(l => l.envelope.id === id)
-  if (i < 0) return 0
-  return i === 0 ? (anterior?.transporte ?? 0) : b.linhas[i - 1].envelope.transporte
+/**
+ * O que o turno anterior a este deixou na caixa.
+ *
+ * Le-se do que o balanco ja calculou, e nao da coluna `transporte` da linha
+ * anterior: num corte de mes o transporte guardado e zero e o que vale e o
+ * calculado, que leva o dinheiro todo adiante.
+ */
+function aberturaDe(b: Balanco, id: string) {
+  return b.linhas.find(l => l.envelope.id === id)?.contas.abertura ?? 0
+}
+
+/** A abertura sugerida a um turno novo: o que o ultimo fecho a vista deixou. */
+function aberturaParaNovo(b: Balanco, ultimo: Envelope | null) {
+  const ultimaLinha = b.linhas[b.linhas.length - 1]
+  if (ultimaLinha) return ultimaLinha.contas.transporte
+  return ultimo?.corte ? 0 : (ultimo?.transporte ?? 0)
 }
 
 /* ------------------------------------------------------------------ avisos */
@@ -393,6 +417,17 @@ function LinhaTurno({
                 onClick={onAbrir}>
           {quando(l.envelope.inicio)} → {quando(l.envelope.fim)}
         </button>
+        {/*
+          Um corte de mês não é um envelope por contar — é o fim do mês a cortar
+          um turno que o atravessa. Sem esta marca, a linha lê-se como um fecho
+          a zero, que é o aspecto de um problema.
+        */}
+        {l.envelope.corte && (
+          <span className="ml-2 chip bg-slate-100 text-slate-600"
+                title="O turno atravessa o fim do mês. Aqui não se contou dinheiro: tudo passou ao fecho seguinte, que levou a contagem.">
+            corte de mês
+          </span>
+        )}
         {l.envelope.nota && (
           <div className="text-[11px] text-slate-400">{l.envelope.nota}</div>
         )}
@@ -414,10 +449,16 @@ function LinhaTurno({
         {c.nFaturas > 0 && <span className="ml-1 text-[11px] text-slate-400">{c.nFaturas}</span>}
       </td>
       <td className="td text-right tabular-nums text-slate-500">
-        {c.transporte ? `−${money(c.transporte)}` : <span className="text-slate-300">—</span>}
+        {l.envelope.corte
+          ? <span title="Num corte passa tudo para o fecho seguinte">{money(c.transporte)}</span>
+          : c.transporte ? `−${money(c.transporte)}` : <span className="text-slate-300">—</span>}
       </td>
-      <td className="td text-right font-medium tabular-nums text-slate-700">{money(c.esperado)}</td>
-      <td className="td text-right font-semibold tabular-nums text-slate-900">{money(c.contado)}</td>
+      <td className="td text-right font-medium tabular-nums text-slate-700">
+        {l.envelope.corte ? <span className="text-slate-300">—</span> : money(c.esperado)}
+      </td>
+      <td className="td text-right font-semibold tabular-nums text-slate-900">
+        {l.envelope.corte ? <span className="text-slate-300">—</span> : money(c.contado)}
+      </td>
       {/*
         A diferença mostra-se sempre que existir. Antes um turno com dez
         cêntimos a mais aparecia com um traço, como se fechasse exacto — o
@@ -798,11 +839,18 @@ function ContarEnvelope({
   const c = contasDoEnvelope(
     { inicio, fim, valor: contado, transporte }, aberturaUsada, doTurno, faturas)
 
+  // se o turno atravessar o fim do mês, isto dá mais do que um — ver partirPorMes
+  const segmentos = useMemo(
+    () => (valido
+      ? partirPorMes({ inicio, fim, valor: contado, denominacoes: qtd, transporte })
+      : []),
+    [valido, inicio, fim, contado, qtd, transporte])
+
   const gravar = async () => {
     setAGravar(true)
     try {
       const env = {
-        dia: fim.slice(0, 10),
+        dia: diaDoFecho(fim),
         inicio, fim,
         responsavel: responsavel.trim() || null,
         abertura: aberturaManual,
@@ -810,10 +858,15 @@ function ContarEnvelope({
         denominacoes: Object.fromEntries(Object.entries(qtd).filter(([, n]) => n > 0)),
         transporte,
         nota: nota.trim() || null,
+        // partirPorMes decide; aqui vai o caso normal
+        corte: false,
       }
-      if (existente) await guardarEnvelope(existente.id, caixaId, env, escolhidas, email)
-      else await juntarEnvelope(caixaId, env, escolhidas, email)
-      toast(existente ? 'Turno actualizado' : 'Turno fechado')
+      // as saídas vão para `juntarEnvelope` poder pôr cada fatura no seu mês
+      if (existente) await guardarEnvelope(existente.id, caixaId, env, escolhidas, email, saidas)
+      else await juntarEnvelope(caixaId, env, escolhidas, email, saidas)
+      toast(segmentos.length > 1
+        ? `Turno fechado em ${segmentos.length}, um por mês`
+        : existente ? 'Turno actualizado' : 'Turno fechado')
       onGravado()
     } catch (e) {
       toast((e as Error).message, 'erro'); setAGravar(false)
@@ -850,6 +903,39 @@ function ContarEnvelope({
         <p className="mt-2 rounded bg-red-50 px-3 py-2 text-sm text-red-700">
           O fecho tem de vir depois da abertura.
         </p>
+      )}
+
+      {/*
+        O turno atravessa o fim do mês. Diz-se antes de gravar e não depois: o
+        que se vai gravar não é o que está no formulário, são dois fechos, e
+        ninguém deve descobrir isso pela tabela.
+      */}
+      {segmentos.length > 1 && (
+        <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm">
+          <p className="text-amber-900">
+            Este turno atravessa o fim do mês, por isso fica registado em{' '}
+            <strong>{segmentos.length} fechos</strong> — cada mês com os seus pagamentos.
+          </p>
+          <ul className="mt-1.5 space-y-0.5">
+            {segmentos.map((s, k) => (
+              <li key={s.inicio} className="flex flex-wrap items-baseline gap-x-2 text-[13px]">
+                <span className="tabular-nums text-amber-900">
+                  {dmyHm(s.inicio)} → {dmyHm(s.fim)}
+                </span>
+                <span className="text-amber-800">
+                  {s.corte
+                    ? 'sem contagem — o dinheiro passa ao fecho seguinte'
+                    : `com a contagem: ${money(s.valor)}`}
+                </span>
+                {k < segmentos.length - 1 && (
+                  <span className="text-[11px] text-amber-700">
+                    (arrumado em {s.dia.slice(0, 7).split('-').reverse().join('/')})
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
 
       {/* ------------------------------------------------- o que devia ter */}
