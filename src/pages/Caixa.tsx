@@ -20,9 +20,6 @@ import { Caixa as CaixaEscolha } from '../components/BulkEdit'
 type Dados = {
   recebido: Recebido[]; saidas: Saida[]; envelopes: Envelope[]
   depositos: Deposito[]
-  /** Os fechos antes do mes, para a corrente de aberturas arrancar — ver fetchMes. */
-  anteriores: Envelope[]
-  saidasAnteriores: Saida[]
 }
 
 /**
@@ -94,9 +91,8 @@ export default function CaixaPage() {
   const caixa = caixas.find(c => c.id === caixaId)
   const b: Balanco | null = useMemo(
     () => (d ? balanco({
-      mes, recebido: d.recebido, saidas: d.saidas, envelopes: d.envelopes,
-      depositos: d.depositos, anteriores: d.anteriores,
-      saidasAnteriores: d.saidasAnteriores,
+      mes, recebido: d.recebido, saidas: d.saidas,
+      envelopes: d.envelopes, depositos: d.depositos,
     }) : null),
     [d, mes])
 
@@ -121,7 +117,7 @@ export default function CaixaPage() {
   const certo = estaCerto(b)
   const ultimo = d.envelopes.length
     ? [...d.envelopes].sort((a, x) => x.fim.localeCompare(a.fim))[0]
-    : d.anteriores[d.anteriores.length - 1] ?? null
+    : null
 
   return (
     <div className="space-y-4">
@@ -159,9 +155,17 @@ export default function CaixaPage() {
         <StatCard label="Pago em faturas" value={money(b.saidas)}
                   hint={`${b.faturas} ${b.faturas === 1 ? 'fatura' : 'faturas'}`} />
         <StatCard label="Contado nos envelopes" value={money(b.contado)}
-                  hint={`${b.envelopes} ${b.envelopes === 1 ? 'turno fechado' : 'turnos fechados'}`} />
+                  hint={b.semContagem
+                    ? `${b.envelopes} fechos, ${b.semContagem} sem contagem`
+                    : `${b.envelopes} ${b.envelopes === 1 ? 'turno fechado' : 'turnos fechados'}`} />
+        {/*
+          Este mes tem para depositar o que contou mais o que apurou nos fechos
+          sem contagem — o dinheiro de setembro deposita-se em setembro, haja
+          contagem a meia-noite ou nao.
+        */}
         <StatCard label="Por depositar" value={money(b.emCofre)}
-                  hint={`${money(b.depositado)} já depositados`} />
+                  hint={`${money(b.depositado)} já depositados${
+                    b.semContagem ? ` · ${money(b.paraDepositar)} apurados no mês` : ''}`} />
         <div className={`card p-4 ${certo ? 'border-[#0ca30c]/40 bg-[#0ca30c]/5'
                                           : 'border-[#d03b3b]/40 bg-[#d03b3b]/5'}`}>
           <div className="text-xs font-medium uppercase tracking-wide text-slate-500">
@@ -407,7 +411,9 @@ function LinhaTurno({
   onApagar: () => void
 }) {
   const c = l.contas
-  const vDif = veredicto(c.diferenca)
+  // num corte de mes nao se contou nada, por isso nao ha diferenca a apurar
+  const emAberto = c.diferenca == null
+  const vDif = veredicto(c.diferenca ?? 0)
   const vAcum = veredicto(l.acumulado)
   const zero = (n: number) => (n ? money(n) : <span className="text-slate-300">—</span>)
   return (
@@ -424,7 +430,7 @@ function LinhaTurno({
         */}
         {l.envelope.corte && (
           <span className="ml-2 chip bg-slate-100 text-slate-600"
-                title="O turno atravessa o fim do mês. Aqui não se contou dinheiro: tudo passou ao fecho seguinte, que levou a contagem.">
+                title="O turno atravessa o fim do mês e fica cortado aqui. Não se contou dinheiro neste fecho, por isso o que há para depositar é o apurado — e fica neste mês: não passa nada para o mês seguinte.">
             corte de mês
           </span>
         )}
@@ -449,15 +455,14 @@ function LinhaTurno({
         {c.nFaturas > 0 && <span className="ml-1 text-[11px] text-slate-400">{c.nFaturas}</span>}
       </td>
       <td className="td text-right tabular-nums text-slate-500">
-        {l.envelope.corte
-          ? <span title="Num corte passa tudo para o fecho seguinte">{money(c.transporte)}</span>
-          : c.transporte ? `−${money(c.transporte)}` : <span className="text-slate-300">—</span>}
+        {c.transporte ? `−${money(c.transporte)}` : <span className="text-slate-300">—</span>}
       </td>
-      <td className="td text-right font-medium tabular-nums text-slate-700">
-        {l.envelope.corte ? <span className="text-slate-300">—</span> : money(c.esperado)}
-      </td>
+      {/* o apurado de um corte e o que ele tem para depositar, por isso mostra-se */}
+      <td className="td text-right font-medium tabular-nums text-slate-700">{money(c.esperado)}</td>
       <td className="td text-right font-semibold tabular-nums text-slate-900">
-        {l.envelope.corte ? <span className="text-slate-300">—</span> : money(c.contado)}
+        {c.contado == null
+          ? <span className="text-slate-300" title="Nao houve contagem neste fecho">—</span>
+          : money(c.contado)}
       </td>
       {/*
         A diferença mostra-se sempre que existir. Antes um turno com dez
@@ -465,10 +470,13 @@ function LinhaTurno({
         traço é só para o zero.
       */}
       <td className={`td text-right font-semibold tabular-nums ${
-        vDif === 'exacto' ? 'text-slate-300'
+        emAberto ? 'text-slate-400'
+          : vDif === 'exacto' ? 'text-slate-300'
           : vDif === 'troco' ? 'text-slate-500'
-          : c.diferenca > 0 ? 'text-[#0a7d0a]' : 'text-[#b32d2d]'}`}>
-        {vDif === 'exacto' ? '—' : `${c.diferenca > 0 ? '+' : ''}${money(c.diferenca)}`}
+          : c.diferenca! > 0 ? 'text-[#0a7d0a]' : 'text-[#b32d2d]'}`}>
+        {emAberto
+          ? <span className="text-[11px]" title="Nao houve contagem neste fecho, por isso nao ha diferenca a apurar">em aberto</span>
+          : vDif === 'exacto' ? '—' : `${c.diferenca! > 0 ? '+' : ''}${money(c.diferenca!)}`}
       </td>
       <td className={`td text-right tabular-nums ${
         vAcum === 'exacto' ? 'text-slate-300'
@@ -924,7 +932,7 @@ function ContarEnvelope({
                 </span>
                 <span className="text-amber-800">
                   {s.corte
-                    ? 'sem contagem — o dinheiro passa ao fecho seguinte'
+                    ? 'sem contagem — fica neste mês o que ele recebeu'
                     : `com a contagem: ${money(s.valor)}`}
                 </span>
                 {k < segmentos.length - 1 && (
@@ -992,13 +1000,13 @@ function ContarEnvelope({
             {contado > 0 && (() => {
               // dez cêntimos a mais são dez cêntimos a mais: dizem-se sempre, e
               // a tolerância só decide se levantam bandeira vermelha
-              const v = veredicto(c.diferenca)
+              const v = veredicto(c.diferenca ?? 0)
               return (
                 <>
                   <div className={`mt-1 text-sm font-medium tabular-nums ${
                     v === 'exacto' ? 'text-[#0a7d0a]'
                       : v === 'troco' ? 'text-slate-600' : 'text-[#b32d2d]'}`}>
-                    contado {money(contado)} · {descreveDiferenca(c.diferenca, money)}
+                    contado {money(contado)} · {descreveDiferenca(c.diferenca ?? 0, money)}
                   </div>
                   {v === 'troco' && (
                     <div className="text-[11px] text-slate-500">

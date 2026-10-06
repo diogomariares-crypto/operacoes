@@ -8,8 +8,9 @@
  * isso os casos são os reais, incluindo o envelope do Gravity que atravessa
  * setembro e outubro, e não exemplos redondos.
  *
- * Importa o módulo compilado pelo esbuild do Vite para não precisar de um
- * runner de TypeScript; o que se testa é o ficheiro tal como vai para a app.
+ * A regra que estes testes guardam: **o dinheiro de um mês fica nesse mês.**
+ * Um turno que atravessa o fim do mês fica em dois fechos, cada um com os seus
+ * pagamentos e o seu depósito, e não passa nada de um para o outro.
  */
 import { execFileSync } from 'node:child_process'
 import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs'
@@ -44,9 +45,11 @@ function ok(nome, obtido, esperado) {
     : JSON.stringify(obtido) === JSON.stringify(esperado)
   if (!bate) {
     falhas++
-    console.log(`  ✗ ${nome}\n      esperado ${JSON.stringify(esperado)}\n      obtido   ${JSON.stringify(obtido)}`)
+    console.log(`  x ${nome}`)
+    console.log(`      esperado ${JSON.stringify(esperado)}`)
+    console.log(`      obtido   ${JSON.stringify(obtido)}`)
   } else {
-    console.log(`  ✓ ${nome}`)
+    console.log(`  . ${nome}`)
   }
 }
 
@@ -66,11 +69,11 @@ const envelopeDe = (seg, extra = {}) => ({
 
 /* ================================ os cortes =============================== */
 
-console.log('\ncortesDeMes — onde o mês corta um turno')
+console.log('\ncortesDeMes - onde o mes corta um turno')
 
 ok('turno normal da noite, sem corte',
   C.cortesDeMes('2026-09-15T23:00', '2026-09-16T07:00'), [])
-ok('turno que atravessa a meia-noite do mês',
+ok('turno que atravessa a meia-noite do mes',
   C.cortesDeMes('2026-09-30T23:00', '2026-10-01T07:00'), ['2026-10-01T00:00:00'])
 ok('o envelope real do Gravity, 28/09 a 05/10',
   C.cortesDeMes('2026-09-28 11:28:00', '2026-10-05 12:08:00'), ['2026-10-01T00:00:00'])
@@ -79,135 +82,147 @@ ok('turno que atravessa dois meses',
   ['2026-09-01T00:00:00', '2026-10-01T00:00:00'])
 ok('fim do ano',
   C.cortesDeMes('2026-12-31T22:00', '2027-01-01T06:00'), ['2027-01-01T00:00:00'])
-// a meia-noite é já do turno seguinte, pela mesma regra que decide os pagamentos
-ok('turno que acaba exactamente na meia-noite do mês não corta',
+// a meia-noite e ja do turno seguinte, pela mesma regra que decide os pagamentos
+ok('turno que acaba exactamente na meia-noite do mes nao corta',
   C.cortesDeMes('2026-09-30T16:00', '2026-10-01T00:00'), [])
 
-console.log('\ndiaDoFecho — em que mês o fecho é arrumado')
-ok('fecho às 07:00 do dia 1', C.diaDoFecho('2026-10-01T07:00'), '2026-10-01')
-ok('corte à meia-noite do dia 1 fica em setembro', C.diaDoFecho('2026-10-01T00:00'), '2026-09-30')
+console.log('\ndiaDoFecho - em que mes o fecho e arrumado')
+ok('fecho as 07:00 do dia 1', C.diaDoFecho('2026-10-01T07:00'), '2026-10-01')
+ok('corte a meia-noite do dia 1 fica em setembro', C.diaDoFecho('2026-10-01T00:00'), '2026-09-30')
 ok('corte na meia-noite de janeiro fica em dezembro', C.diaDoFecho('2027-01-01T00:00'), '2026-12-31')
 
 /* ============================== partir o turno ============================ */
 
-console.log('\npartirPorMes — a contagem física fica no último segmento')
+console.log('\npartirPorMes - a contagem fisica fica no ultimo segmento')
 
 const inteiro = {
   inicio: '2026-09-28T11:28', fim: '2026-10-05T12:08',
   valor: 15, denominacoes: { '10': 1, '5': 1 }, transporte: 4.19,
 }
 const segs = C.partirPorMes(inteiro)
-ok('dá dois fechos', segs.length, 2)
-ok('o de setembro vai até à meia-noite', segs[0].fim, '2026-10-01T00:00:00')
+ok('da dois fechos', segs.length, 2)
+ok('o de setembro vai ate a meia-noite', segs[0].fim, '2026-10-01T00:00:00')
 ok('e fica arrumado em setembro', segs[0].dia, '2026-09-30')
-ok('é um corte', segs[0].corte, true)
+ok('e um corte', segs[0].corte, true)
 ok('sem dinheiro contado', segs[0].valor, 0)
-ok('e sem denominações', segs[0].denominacoes, {})
-ok('o de outubro começa na meia-noite', segs[1].inicio, '2026-10-01T00:00:00')
+ok('e sem denominacoes', segs[0].denominacoes, {})
+ok('e sem transporte - nao passa nada para outubro', segs[0].transporte, 0)
+ok('o de outubro comeca na meia-noite', segs[1].inicio, '2026-10-01T00:00:00')
 ok('arrumado no dia do fecho real', segs[1].dia, '2026-10-05')
-ok('não é corte', segs[1].corte, false)
+ok('nao e corte', segs[1].corte, false)
 ok('leva a contagem toda', segs[1].valor, 15)
-ok('leva as denominações', segs[1].denominacoes, { '10': 1, '5': 1 })
+ok('leva as denominacoes', segs[1].denominacoes, { '10': 1, '5': 1 })
 ok('leva o troco que ficou', segs[1].transporte, 4.19)
 
 const umSo = C.partirPorMes({
   inicio: '2026-09-15T23:00', fim: '2026-09-16T07:00',
   valor: 100, denominacoes: { '50': 2 }, transporte: 20,
 })
-ok('um turno que não atravessa mês dá um fecho só', umSo.length, 1)
-ok('e esse não é corte', umSo[0].corte, false)
+ok('um turno que nao atravessa mes da um fecho so', umSo.length, 1)
+ok('e esse nao e corte', umSo[0].corte, false)
 ok('com o valor intacto', umSo[0].valor, 100)
 
-/* ========================== as contas de um corte ========================= */
+/* ========================== as contas de um corte ======================== */
 
-console.log('\ncontasDoEnvelope — num corte tudo passa adiante')
+console.log('\ncontasDoEnvelope - num corte o dinheiro fica no mes')
 
 const recebidoSet = [pag('2026-09-28T12:00:00', 100), pag('2026-09-30T20:00:00', 20)]
 const recebidoOut = [pag('2026-10-02T10:00:00', 50)]
 const todos = [...recebidoSet, ...recebidoOut]
 
-const cSet = C.contasDoEnvelope(
-  { ...segs[0], valor: 0, transporte: 0 }, 30, todos, [])
-ok('o corte só vê os pagamentos de setembro', cSet.recebido, 120)
-ok('não tem nada contado', cSet.contado, 0)
-ok('nem esperado', cSet.esperado, 0)
-ok('nem diferença própria', cSet.diferenca, 0)
-ok('e passa adiante a abertura mais o recebido', cSet.transporte, 150)
+const cSet = C.contasDoEnvelope(segs[0], 30, todos, [])
+ok('o corte so ve os pagamentos de setembro', cSet.recebido, 120)
+ok('nao tem contagem - nulo, que nao e zero', cSet.contado, null)
+ok('e por isso a diferenca fica em aberto', cSet.diferenca, null)
+ok('o apurado e a abertura mais o recebido', cSet.esperado, 150)
+ok('e e isso que setembro tem para depositar', cSet.paraDepositar, 150)
+ok('nao passa nada para outubro', cSet.transporte, 0)
 
-const cSetFat = C.contasDoEnvelope(
-  { ...segs[0], valor: 0, transporte: 0 }, 30, todos, [fat('2026-09-29', 40)])
-ok('uma fatura paga em setembro sai do que passa adiante', cSetFat.transporte, 110)
+const cSetFat = C.contasDoEnvelope(segs[0], 30, todos, [fat('2026-09-29', 40)])
+ok('uma fatura paga em setembro sai do que ha para depositar', cSetFat.paraDepositar, 110)
 
-const cOut = C.contasDoEnvelope(segs[1], cSet.transporte, todos, [])
-ok('outubro abre com o que o corte deixou', cOut.abertura, 150)
-ok('e só vê os pagamentos de outubro', cOut.recebido, 50)
-ok('esperado = 150 + 50 − 0 − 4,19', cOut.esperado, 195.81)
-ok('contaram-se 15, logo faltam 180,81', cOut.diferenca, -180.81)
+// outubro abre a zero: o dinheiro de setembro ficou em setembro
+const cOut = C.contasDoEnvelope(segs[1], 0, todos, [])
+ok('outubro abre a zero', cOut.abertura, 0)
+ok('e so ve os pagamentos de outubro', cOut.recebido, 50)
+ok('apurado = 0 + 50 - 0 - 4,19', cOut.esperado, 45.81)
+ok('contaram-se 15, logo faltam 30,81', cOut.diferenca, -30.81)
+ok('e tem 15 para depositar, o que foi contado', cOut.paraDepositar, 15)
 
-/* ===================== o balanço, mês a mês, com a corrente ================ */
+/* ===================== o balanco, mes a mes, sem passagens ================ */
 
-console.log('\nbalanco — a corrente de aberturas atravessa o fim do mês')
+console.log('\nbalanco - cada mes fica com o seu')
 
 const eSet = envelopeDe(segs[0], { id: 'set' })
 const eOut = envelopeDe(segs[1], { id: 'out' })
-
-// setembro: o turno antes do corte deixou 30 € na caixa
 const antesDoCorte = envelopeDe({
   inicio: '2026-09-20T10:00', fim: '2026-09-28T11:28', dia: '2026-09-28',
   corte: false, valor: 500, denominacoes: {}, transporte: 30,
 }, { id: 'ant' })
 
 const bSet = C.balanco({
-  mes: '2026-09', recebido: todos, saidas: [], envelopes: [antesDoCorte, eSet],
-  depositos: [], anteriores: [], saidasAnteriores: [],
+  mes: '2026-09', recebido: todos, saidas: [],
+  envelopes: [antesDoCorte, eSet], depositos: [],
 })
-ok('setembro mostra só o recebido de setembro', bSet.recebidoDoMes, 120)
-ok('o recebido largo é maior, e é de propósito', bSet.recebido, 170)
-ok('o corte não acrescenta diferença ao mês', bSet.linhas[1].contas.diferenca, 0)
-ok('o corte passa 150 € adiante', bSet.linhas[1].contas.transporte, 150)
+ok('setembro mostra so o recebido de setembro', bSet.recebidoDoMes, 120)
+ok('o recebido largo e maior, e e de proposito', bSet.recebido, 170)
+ok('o corte nao apura diferenca', bSet.linhas[1].contas.diferenca, null)
+ok('e conta-se como fecho sem contagem', bSet.semContagem, 1)
+// 500 contados no fecho fisico + 150 apurados no corte
+ok('setembro tem para depositar o contado mais o apurado do corte',
+  bSet.paraDepositar, 650)
+// o acumulado e so o do fecho fisico: o corte nao lhe acrescenta nada
+ok('o acumulado do mes e so a diferenca do fecho fisico',
+  bSet.diferenca, bSet.linhas[0].contas.diferenca)
+ok('e a linha do corte repete o acumulado em vez de o mexer',
+  bSet.linhas[1].acumulado, bSet.linhas[0].acumulado)
 
 const bOut = C.balanco({
-  mes: '2026-10', recebido: todos, saidas: [], envelopes: [eOut],
-  depositos: [], anteriores: [antesDoCorte, eSet], saidasAnteriores: [],
+  mes: '2026-10', recebido: todos, saidas: [], envelopes: [eOut], depositos: [],
 })
-ok('outubro mostra só o recebido de outubro', bOut.recebidoDoMes, 50)
-ok('e abre com os 150 € que vieram de setembro', bOut.linhas[0].contas.abertura, 150)
-ok('a diferença do turno todo sai em outubro', bOut.linhas[0].contas.diferenca, -180.81)
+ok('outubro mostra so o recebido de outubro', bOut.recebidoDoMes, 50)
+ok('e abre a zero - nada veio de setembro', bOut.linhas[0].contas.abertura, 0)
+ok('a diferenca de outubro e so a de outubro', bOut.linhas[0].contas.diferenca, -30.81)
+ok('e tem 15 para depositar', bOut.paraDepositar, 15)
 ok('nenhum pagamento fica fora de turno', bOut.foraDeTurno.length, 0)
 
-/* ------- o caso que motivou tudo: pagamentos importados depois do fecho ----- */
+// a soma dos dois e o recebido do turno todo: nada se perdeu nem se contou duas vezes
+ok('setembro + outubro = o recebido do turno inteiro',
+  bSet.linhas[1].contas.recebido + bOut.linhas[0].contas.recebido, 170)
 
-console.log('\npagamentos importados depois de o fecho já existir')
+/* --------- pagamentos importados depois de o fecho ja existir ------------- */
+
+console.log('\npagamentos importados depois de o fecho ja existir')
 
 const maisTarde = [...todos, pag('2026-09-29T09:00:00', 200)]
 const bSet2 = C.balanco({
-  mes: '2026-09', recebido: maisTarde, saidas: [], envelopes: [antesDoCorte, eSet],
-  depositos: [], anteriores: [], saidasAnteriores: [],
+  mes: '2026-09', recebido: maisTarde, saidas: [],
+  envelopes: [antesDoCorte, eSet], depositos: [],
 })
 ok('setembro acompanha o pagamento novo', bSet2.recebidoDoMes, 320)
+ok('e o que ha para depositar em setembro sobe sozinho', bSet2.paraDepositar, 850)
 const bOut2 = C.balanco({
-  mes: '2026-10', recebido: maisTarde, saidas: [], envelopes: [eOut],
-  depositos: [], anteriores: [antesDoCorte, eSet], saidasAnteriores: [],
+  mes: '2026-10', recebido: maisTarde, saidas: [], envelopes: [eOut], depositos: [],
 })
-ok('e a abertura de outubro sobe sozinha, sem ninguém reescrever nada',
-  bOut2.linhas[0].contas.abertura, 350)
-ok('outubro continua a mostrar só o seu recebido', bOut2.recebidoDoMes, 50)
+ok('outubro nao se mexe - e o ponto de tudo isto', bOut2.linhas[0].contas.abertura, 0)
+ok('nem o seu recebido', bOut2.recebidoDoMes, 50)
+ok('nem o que tem para depositar', bOut2.paraDepositar, 15)
 
-/* ------------------- o que estava mal antes desta mudança ------------------ */
+/* ------------------- o que estava mal antes desta mudanca ----------------- */
 
-console.log('\no defeito que começou isto: dias de fora no total do mês')
+console.log('\no defeito que comecou isto: dias de fora no total do mes')
 
 const soOutubro = C.balanco({
   mes: '2026-10',
   // tal como vem da base de dados: a janela traz 30/09 para as contas do turno
   recebido: [pag('2026-09-30T23:30:00', 45.15), pag('2026-10-02T10:00:00', 882)],
-  saidas: [], envelopes: [], depositos: [], anteriores: [], saidasAnteriores: [],
+  saidas: [], envelopes: [], depositos: [],
 })
-ok('outubro já não conta os 45,15 € de 30 de setembro', soOutubro.recebidoDoMes, 882)
-ok('mas a soma larga continua disponível para os turnos', soOutubro.recebido, 927.15)
+ok('outubro ja nao conta os 45,15 de 30 de setembro', soOutubro.recebidoDoMes, 882)
+ok('mas a soma larga continua disponivel para os turnos', soOutubro.recebido, 927.15)
 
 /* ---------------------------------- fim ----------------------------------- */
 
 rmSync(tmp, { recursive: true, force: true })
-console.log(`\n${feitos} verificações, ${falhas} falha(s)`)
+console.log(`\n${feitos} verificacoes, ${falhas} falha(s)`)
 process.exit(falhas ? 1 : 0)
