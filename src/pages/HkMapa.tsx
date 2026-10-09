@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useApp } from '../lib/appState'
 import {
-  balanco, corDoBalanco, fetchDias, fetchLimpezas, fetchOutsourcing, fetchParametros,
+  balanco, corDoBalanco, fetchDias, fetchAjustes, fetchOutsourcing, fetchParametros,
   horas, minutosDoTurno, pessoasTexto,
   type Balanco, type Dia, type Parametros,
 } from '../lib/housekeeping'
@@ -46,8 +46,8 @@ export default function HkMapa() {
 
     Promise.all([
       fetchParametros(hotelId),
-      fetchDias(hotelId, de, ate), fetchLimpezas(hotelId, de, ate), fetchOutsourcing(hotelId, de, ate),
-      fetchDias(hotelId, anoDe, ate), fetchLimpezas(hotelId, anoDe, ate), fetchOutsourcing(hotelId, anoDe, ate),
+      fetchDias(hotelId, de, ate), fetchAjustes(hotelId, de, ate), fetchOutsourcing(hotelId, de, ate),
+      fetchDias(hotelId, anoDe, ate), fetchAjustes(hotelId, anoDe, ate), fetchOutsourcing(hotelId, anoDe, ate),
     ])
       .then(([p, ds, ls, ts, ds2, ls2, ts2]) => {
         setParam(p)
@@ -62,11 +62,11 @@ export default function HkMapa() {
 
   const T = useMemo(() => {
     const t = { dias: linhas.length, necessarios: 0, disponiveis: 0, pessoas: 0,
-                quartos: 0, saidas: 0, staff: 0, limpezas: 0, outsourcing: 0 }
+                quartos: 0, saidas: 0, staff: 0, ajustes: 0, outsourcing: 0 }
     for (const { d, b } of linhas) {
       t.necessarios += b.necessarios; t.disponiveis += b.disponiveis; t.pessoas += b.pessoas
       t.quartos += d.quartos_ocupados; t.saidas += d.saidas; t.staff += d.staff
-      t.limpezas += b.limpezasMin; t.outsourcing += b.outsourcingMin
+      t.ajustes += b.ajustesMin; t.outsourcing += b.outsourcingMin
     }
     return t
   }, [linhas])

@@ -2,9 +2,15 @@
  * Housekeeping — produção e pessoal.
  *
  * A pergunta é sempre a mesma: o trabalho que o dia exige cabe nas pessoas que
- * há? De um lado os quartos a limpar, de outro os turnos de pessoal mais o
- * outsourcing, menos as limpezas gerais — que saem do mesmo bolo de horas mas
- * não são quartos.
+ * há? De um lado os quartos a limpar, de outro as horas das pessoas em turno
+ * mais o outsourcing, menos os **ajustes**.
+ *
+ * Os ajustes são as horas em que essas mesmas pessoas não estiveram nos
+ * quartos: zonas comuns, inventário, uma formação, uma avaria. Lançam-se para
+ * serem subtraídas às horas disponíveis, e é isso que faz a conta responder à
+ * pergunta certa — quanto tempo foi de facto gasto nos quartos, e não quanto
+ * tempo havia ao todo. Chamavam-se «limpezas gerais», nome que dizia um exemplo
+ * em vez de dizer a função.
  *
  * Um quarto limpa-se de duas maneiras, e não custam o mesmo:
  *
@@ -49,6 +55,7 @@ export interface Dia {
   quartos_ocupados: number
   /** Ocupados que saem hoje: limpeza completa. */
   saidas: number
+  /** Quantas pessoas estiveram em turno a trabalhar nos quartos. */
   staff: number
   /** Os rácios em vigor no dia, congelados para o histórico não se reescrever. */
   min_por_quarto: number
@@ -57,9 +64,18 @@ export interface Dia {
   nota: string | null
 }
 
-export interface Limpeza {
+/**
+ * Um ajuste: horas de gente em turno que não foram para os quartos.
+ *
+ * Guarda-se em **minutos**, como todo o resto deste módulo (min_por_quarto,
+ * min_por_saida), e escreve-se e mostra-se em horas e minutos. A tabela na base
+ * de dados continua a chamar-se `hk_limpezas`, do tempo em que o campo só
+ * servia para limpezas gerais; o nome ficou e o significado alargou.
+ */
+export interface Ajuste {
   id: string
   dia: string
+  /** Para onde foram as horas. Serve para depois se saber o porquê, não só o quanto. */
   descricao: string
   minutos: number
 }
@@ -95,10 +111,16 @@ export const minutosNecessarios = (d: Pick<Dia,
   'quartos_ocupados' | 'saidas' | 'min_por_quarto' | 'min_por_saida'>) =>
   d.quartos_ocupados * d.min_por_quarto + d.saidas * d.min_por_saida
 
-/** O que sobra para os quartos: turnos + outsourcing − limpezas gerais. */
+/**
+ * O que sobrou para os quartos.
+ *
+ * As pessoas em turno dão o bolo de horas; o outsourcing acrescenta; os ajustes
+ * tiram as horas dessas mesmas pessoas que não foram para os quartos. O que fica
+ * é o tempo que esteve de facto disponível para quartos.
+ */
 export const minutosDisponiveis = (
-  d: Pick<Dia, 'staff' | 'horas_por_turno'>, limpezasMin: number, outsourcingMin = 0,
-) => Math.max(0, d.staff * d.horas_por_turno * 60 + outsourcingMin - limpezasMin)
+  d: Pick<Dia, 'staff' | 'horas_por_turno'>, ajustesMin: number, outsourcingMin = 0,
+) => Math.max(0, d.staff * d.horas_por_turno * 60 + outsourcingMin - ajustesMin)
 
 export interface Balanco {
   necessarios: number
@@ -107,19 +129,20 @@ export interface Balanco {
   diferenca: number
   /** A diferença traduzida em pessoas de um turno. */
   pessoas: number
-  limpezasMin: number
+  /** Horas de gente em turno que não foram para os quartos, em minutos. */
+  ajustesMin: number
   outsourcingMin: number
 }
 
-export function balanco(d: Dia, limpezasMin: number, outsourcingMin = 0): Balanco {
+export function balanco(d: Dia, ajustesMin: number, outsourcingMin = 0): Balanco {
   const necessarios = minutosNecessarios(d)
-  const disponiveis = minutosDisponiveis(d, limpezasMin, outsourcingMin)
+  const disponiveis = minutosDisponiveis(d, ajustesMin, outsourcingMin)
   const diferenca = necessarios - disponiveis
   const base = d.horas_por_turno * 60
   return {
     necessarios, disponiveis, diferenca,
     pessoas: base > 0 ? diferenca / base : 0,
-    limpezasMin, outsourcingMin,
+    ajustesMin, outsourcingMin,
   }
 }
 
@@ -174,6 +197,50 @@ export const pessoasTexto = (p: number) =>
   `${p > 0 ? '+' : p < 0 ? '−' : ''}${Math.abs(p).toLocaleString('pt-PT', {
     minimumFractionDigits: 1, maximumFractionDigits: 1 })}`
 
+/**
+ * Lê um tempo escrito à mão e devolve minutos. Null quando não se entende.
+ *
+ * A Governanta escreve horas e minutos — «1:30» — porque é como pensa no
+ * relógio. Mas um campo que só aceita uma forma irrita quem escreve depressa,
+ * por isso aceitam-se as formas que uma pessoa usa sem pensar:
+ *
+ *     1:30  1.30  1,30  1h30  1h 30   →  90
+ *     2     2:00  2h               →  120   (um número sozinho são horas)
+ *     0:45  :45   45m   45min      →  45
+ *
+ * A regra do número sozinho é a que mais importa e a menos óbvia: «2» são duas
+ * horas e não dois minutos, porque o campo é de horas. Quem quiser minutos
+ * escreve-os com o `m`.
+ */
+export function minutosDeTexto(texto: string): number | null {
+  const t = texto.trim().toLowerCase().replace(/\s+/g, '')
+  if (t === '') return 0
+
+  // 45m, 45min — minutos explícitos
+  const soMin = /^(\d+)m(?:in)?$/.exec(t)
+  if (soMin) return Number(soMin[1])
+
+  // 1:30, 1.30, 1,30, 1h30, 1h, :45
+  const comSep = /^(\d*)[:.,h](\d{0,2})$/.exec(t)
+  if (comSep) {
+    const h = comSep[1] === '' ? 0 : Number(comSep[1])
+    const m = comSep[2] === '' ? 0 : Number(comSep[2].padEnd(2, '0'))
+    if (m > 59) return null
+    return h * 60 + m
+  }
+
+  // 2 — um número sozinho são horas
+  if (/^\d+$/.test(t)) return Number(t) * 60
+  return null
+}
+
+/** Minutos em "1:30", para um campo que se escreve. Zero fica vazio. */
+export function textoDeMinutos(min: number): string {
+  if (!min) return ''
+  const t = Math.abs(Math.round(min))
+  return `${min < 0 ? '-' : ''}${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`
+}
+
 /** Minutos em "3h20" — ninguém raciocina em 200 minutos. */
 export function horas(min: number): string {
   const sinal = min < 0 ? '−' : ''
@@ -227,12 +294,12 @@ export async function fetchDias(hotelId: string, de: string, ate: string): Promi
   }))
 }
 
-export async function fetchLimpezas(hotelId: string, de: string, ate: string): Promise<Limpeza[]> {
+export async function fetchAjustes(hotelId: string, de: string, ate: string): Promise<Ajuste[]> {
   const { data, error } = await supabase
     .from('hk_limpezas').select('*').eq('hotel_id', hotelId)
     .gte('dia', de).lte('dia', ate).order('dia')
   if (error) throw error
-  return (data ?? []).map(r => ({ ...r, minutos: num(r.minutos) })) as Limpeza[]
+  return (data ?? []).map(r => ({ ...r, minutos: num(r.minutos) })) as Ajuste[]
 }
 
 /**
@@ -310,19 +377,20 @@ export async function guardarDias(
 }
 
 /**
- * As limpezas gerais são uma lista com descrição — na tabela do mês há só um
- * número por dia. Enquanto o dia tiver uma linha só, o número mexe-a; a zero,
- * apaga-a. Um dia com várias linhas discriminadas não se deixa esmagar por um
- * número: esse edita-se no Registo.
+ * Os ajustes são uma lista com descrição — na tabela do mês há só um número por
+ * dia, que é o total. Enquanto o dia tiver uma linha só, o número mexe-a; a
+ * zero, apaga-a. Um dia com várias linhas discriminadas não se deixa esmagar
+ * por um número: esse edita-se no Registo do dia, onde se vê para onde as horas
+ * foram.
  */
-export async function definirLimpezaDoDia(
-  hotelId: string, dia: string, minutos: number, existentes: Limpeza[],
+export async function definirAjusteDoDia(
+  hotelId: string, dia: string, minutos: number, existentes: Ajuste[],
 ) {
   if (existentes.length > 1) throw new Error(
-    `${dmyCurto(dia)} tem várias limpezas discriminadas — edita-as no Registo do dia.`)
+    `${dmyCurto(dia)} tem vários ajustes discriminados — edita-os no Registo do dia.`)
   const actual = existentes[0]
   if (minutos <= 0) {
-    if (actual) await apagarLimpeza(actual.id)
+    if (actual) await apagarAjuste(actual.id)
     return
   }
   if (actual) {
@@ -331,17 +399,19 @@ export async function definirLimpezaDoDia(
     if (error) throw error
     return
   }
-  await juntarLimpeza(hotelId, { dia, descricao: 'Limpezas gerais', minutos })
+  // sem descrição não se sabe para onde foram as horas; esta é a que o campo
+  // rápido da tabela assume, e no detalhe do dia pode-se discriminar melhor
+  await juntarAjuste(hotelId, { dia, descricao: 'Horas fora dos quartos', minutos })
 }
 
 const dmyCurto = (iso: string) => `${iso.slice(8)}/${iso.slice(5, 7)}`
 
-export async function juntarLimpeza(hotelId: string, l: Omit<Limpeza, 'id'>) {
+export async function juntarAjuste(hotelId: string, l: Omit<Ajuste, 'id'>) {
   const { error } = await supabase.from('hk_limpezas').insert({ ...l, hotel_id: hotelId })
   if (error) throw error
 }
 
-export async function apagarLimpeza(id: string) {
+export async function apagarAjuste(id: string) {
   const { error } = await supabase.from('hk_limpezas').delete().eq('id', id)
   if (error) throw error
 }

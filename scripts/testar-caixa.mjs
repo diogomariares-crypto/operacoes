@@ -106,7 +106,7 @@ ok('e fica arrumado em setembro', segs[0].dia, '2026-09-30')
 ok('e um corte', segs[0].corte, true)
 ok('sem dinheiro contado', segs[0].valor, 0)
 ok('e sem denominacoes', segs[0].denominacoes, {})
-ok('e sem transporte - nao passa nada para outubro', segs[0].transporte, 0)
+ok('deixa o mesmo troco na caixa que o turno declarou', segs[0].transporte, 4.19)
 ok('o de outubro comeca na meia-noite', segs[1].inicio, '2026-10-01T00:00:00')
 ok('arrumado no dia do fecho real', segs[1].dia, '2026-10-05')
 ok('nao e corte', segs[1].corte, false)
@@ -134,20 +134,46 @@ const cSet = C.contasDoEnvelope(segs[0], 30, todos, [])
 ok('o corte so ve os pagamentos de setembro', cSet.recebido, 120)
 ok('nao tem contagem - nulo, que nao e zero', cSet.contado, null)
 ok('e por isso a diferenca fica em aberto', cSet.diferenca, null)
-ok('o apurado e a abertura mais o recebido', cSet.esperado, 150)
-ok('e e isso que setembro tem para depositar', cSet.paraDepositar, 150)
-ok('nao passa nada para outubro', cSet.transporte, 0)
+ok('desconta o troco que fica na caixa', cSet.transporte, 4.19)
+ok('apurado = 30 + 120 - 0 - 4,19', cSet.esperado, 145.81)
+ok('e e isso que setembro tem para depositar', cSet.paraDepositar, 145.81)
 
 const cSetFat = C.contasDoEnvelope(segs[0], 30, todos, [fat('2026-09-29', 40)])
-ok('uma fatura paga em setembro sai do que ha para depositar', cSetFat.paraDepositar, 110)
+ok('uma fatura paga em setembro sai do que ha para depositar', cSetFat.paraDepositar, 105.81)
 
-// outubro abre a zero: o dinheiro de setembro ficou em setembro
-const cOut = C.contasDoEnvelope(segs[1], 0, todos, [])
-ok('outubro abre a zero', cOut.abertura, 0)
+// so o troco atravessa o fim do mes
+const cOut = C.contasDoEnvelope(segs[1], cSet.transporte, todos, [])
+ok('outubro abre com o troco, e so com o troco', cOut.abertura, 4.19)
 ok('e so ve os pagamentos de outubro', cOut.recebido, 50)
-ok('apurado = 0 + 50 - 0 - 4,19', cOut.esperado, 45.81)
-ok('contaram-se 15, logo faltam 30,81', cOut.diferenca, -30.81)
+ok('apurado = 4,19 + 50 - 0 - 4,19', cOut.esperado, 50)
+ok('contaram-se 15, logo faltam 35', cOut.diferenca, -35)
 ok('e tem 15 para depositar, o que foi contado', cOut.paraDepositar, 15)
+
+/* ---- o caso exacto do ecra: 45,15 cobrados, 25,96 de faturas, 4,19 de troco ---- */
+
+console.log('\no envelope real do Gravity, com os numeros do ecra')
+
+const real = C.partirPorMes({
+  inicio: '2026-09-28T11:28', fim: '2026-10-05T12:08',
+  valor: 15, denominacoes: { '10': 1, '5': 1 }, transporte: 4.19,
+})
+const pagSet = [pag('2026-09-30T17:12:00', 45.15)]
+const pagOut = [pag('2026-10-04T09:56:00', 75), pag('2026-10-04T10:06:00', 24),
+                pag('2026-10-05T10:04:00', 765)]
+const fatSet = [fat('2026-09-30', 13), fat('2026-09-30', 12.96)]
+
+const rSet = C.contasDoEnvelope(real[0], 0, [...pagSet, ...pagOut], fatSet)
+ok('setembro cobra 45,15', rSet.recebido, 45.15)
+ok('com 25,96 de faturas', rSet.faturas, 25.96)
+ok('e 4,19 de troco que fica', rSet.transporte, 4.19)
+ok('da 15,00 EUR para depositar em setembro', rSet.paraDepositar, 15)
+ok('sem diferenca a apurar', rSet.diferenca, null)
+
+const rOut = C.contasDoEnvelope(real[1], rSet.transporte, [...pagSet, ...pagOut], [])
+ok('outubro abre com os 4,19', rOut.abertura, 4.19)
+ok('cobra 864,00', rOut.recebido, 864)
+ok('apura 864,00 para depositar', rOut.esperado, 864)
+ok('e com 15,00 contados a diferenca e -849,00', rOut.diferenca, -849)
 
 /* ===================== o balanco, mes a mes, sem passagens ================ */
 
@@ -168,9 +194,11 @@ ok('setembro mostra so o recebido de setembro', bSet.recebidoDoMes, 120)
 ok('o recebido largo e maior, e e de proposito', bSet.recebido, 170)
 ok('o corte nao apura diferenca', bSet.linhas[1].contas.diferenca, null)
 ok('e conta-se como fecho sem contagem', bSet.semContagem, 1)
-// 500 contados no fecho fisico + 150 apurados no corte
+ok('o corte abre com o troco que o fecho anterior deixou',
+  bSet.linhas[1].contas.abertura, 30)
+// 500 contados no fecho fisico + (30 + 120 - 4,19) apurados no corte
 ok('setembro tem para depositar o contado mais o apurado do corte',
-  bSet.paraDepositar, 650)
+  bSet.paraDepositar, 645.81)
 // o acumulado e so o do fecho fisico: o corte nao lhe acrescenta nada
 ok('o acumulado do mes e so a diferenca do fecho fisico',
   bSet.diferenca, bSet.linhas[0].contas.diferenca)
@@ -179,10 +207,11 @@ ok('e a linha do corte repete o acumulado em vez de o mexer',
 
 const bOut = C.balanco({
   mes: '2026-10', recebido: todos, saidas: [], envelopes: [eOut], depositos: [],
+  anterior: eSet,
 })
 ok('outubro mostra so o recebido de outubro', bOut.recebidoDoMes, 50)
-ok('e abre a zero - nada veio de setembro', bOut.linhas[0].contas.abertura, 0)
-ok('a diferenca de outubro e so a de outubro', bOut.linhas[0].contas.diferenca, -30.81)
+ok('e abre com o troco de setembro, e so com ele', bOut.linhas[0].contas.abertura, 4.19)
+ok('a diferenca de outubro e so a de outubro', bOut.linhas[0].contas.diferenca, -35)
 ok('e tem 15 para depositar', bOut.paraDepositar, 15)
 ok('nenhum pagamento fica fora de turno', bOut.foraDeTurno.length, 0)
 
@@ -200,11 +229,12 @@ const bSet2 = C.balanco({
   envelopes: [antesDoCorte, eSet], depositos: [],
 })
 ok('setembro acompanha o pagamento novo', bSet2.recebidoDoMes, 320)
-ok('e o que ha para depositar em setembro sobe sozinho', bSet2.paraDepositar, 850)
+ok('e o que ha para depositar em setembro sobe sozinho', bSet2.paraDepositar, 845.81)
 const bOut2 = C.balanco({
   mes: '2026-10', recebido: maisTarde, saidas: [], envelopes: [eOut], depositos: [],
+  anterior: eSet,
 })
-ok('outubro nao se mexe - e o ponto de tudo isto', bOut2.linhas[0].contas.abertura, 0)
+ok('outubro nao se mexe - e o ponto de tudo isto', bOut2.linhas[0].contas.abertura, 4.19)
 ok('nem o seu recebido', bOut2.recebidoDoMes, 50)
 ok('nem o que tem para depositar', bOut2.paraDepositar, 15)
 

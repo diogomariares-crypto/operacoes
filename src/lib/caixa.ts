@@ -98,13 +98,15 @@ export interface Envelope {
    *    Isso não é o mesmo que ter contado zero: o contado fica *nulo* e a
    *    diferença fica **em aberto**, em vez de aparecer um zero que se leria
    *    como «bate certo».
-   *  - **Não passa dinheiro para o mês seguinte.** O dinheiro de setembro é de
-   *    setembro e deposita-se em setembro; o de outubro é de outubro. Por isso o
-   *    transporte de um corte é zero e o fecho seguinte abre a zero.
+   *  - **O dinheiro dele fica no mês dele.** Setembro não entrega a outubro o
+   *    que cobrou: deposita-o. O que setembro tem para depositar é o **apurado**
+   *    — `abertura + recebido − faturas − troco` — e não uma contagem que não
+   *    existe. É o que `ContasDoEnvelope.paraDepositar` devolve.
    *
-   * O que setembro tem para depositar é então o **apurado** — `abertura +
-   * recebido − faturas` — e não uma contagem que não existe. É o que
-   * `ContasDoEnvelope.paraDepositar` devolve.
+   * O troco é a única coisa que atravessa o fim do mês, e atravessa porque é
+   * verdade: fica fisicamente na caixa para quem entra a seguir. No envelope de
+   * 28/09 a 05/10, com 45,15 € cobrados, 25,96 € de faturas e 4,19 € de troco,
+   * setembro deposita 15,00 € e outubro abre com 4,19 €.
    */
   corte: boolean
 }
@@ -245,9 +247,12 @@ export function partirPorMes(e: {
       inicio, fim, dia: diaDoFecho(fim), corte: !ultimo,
       valor: ultimo ? e.valor : 0,
       denominacoes: ultimo ? e.denominacoes : {},
-      // num corte nao passa dinheiro para o mes seguinte: zero, e o fecho
-      // seguinte abre a zero
-      transporte: ultimo ? e.transporte : 0,
+      /*
+       * Cada segmento fecha deixando o mesmo troco na caixa, porque e isso que
+       * acontece na realidade: o fundo de caixa nao muda a meia-noite. O troco
+       * desconta no segmento que o deixa e abre o seguinte.
+       */
+      transporte: e.transporte,
     }
   })
 }
@@ -296,30 +301,35 @@ export function contasDoEnvelope(
   const f = somar(faturas, x => x.valor)
 
   /*
-   * Num corte de mes nao houve contagem e nao passa dinheiro para o mes
-   * seguinte: o que setembro recebeu fica em setembro, para depositar em
-   * setembro. Logo o transporte e zero, o apurado e tudo o que se juntou, e a
-   * diferenca fica em aberto -- nao zero, que se leria como «bate certo».
-   * Ver a nota em `Envelope.corte`.
+   * A conta e a mesma para todos os fechos, corte ou nao: o que estava na caixa,
+   * mais o cobrado, menos as faturas que sairam da caixa, menos o troco que fica
+   * para o turno seguinte.
    */
-  if (env.corte) {
-    const esperado = cents(abertura + r - f)
-    return {
-      abertura: cents(abertura), recebido: r, faturas: f, transporte: 0,
-      esperado, contado: null, diferenca: null, certo: true,
-      paraDepositar: esperado,
-      nPagamentos: doTurno.length, nFaturas: faturas.length,
-    }
+  const esperado = cents(abertura + r - f - env.transporte)
+  const comum = {
+    abertura: cents(abertura), recebido: r, faturas: f, transporte: env.transporte,
+    esperado, nPagamentos: doTurno.length, nFaturas: faturas.length,
   }
 
-  const esperado = cents(abertura + r - f - env.transporte)
+  /*
+   * O que distingue um corte e so nao ter havido contagem: ninguem foi a caixa a
+   * meia-noite. Entao o contado fica NULO -- que nao e zero -- e a diferenca fica
+   * em aberto, porque nao ha nada com que comparar. O dinheiro que o mes apurou
+   * existe e deposita-se nesse mes: e o apurado que vai para o deposito.
+   *
+   * O troco continua a descontar e a passar ao fecho seguinte. E a unica coisa
+   * que atravessa o fim do mes, e atravessa porque e verdade: fica fisicamente na
+   * caixa para quem entra a seguir.
+   */
+  if (env.corte) {
+    return { ...comum, contado: null, diferenca: null, certo: true, paraDepositar: esperado }
+  }
+
   const diferenca = cents(env.valor - esperado)
   return {
-    abertura: cents(abertura), recebido: r, faturas: f, transporte: env.transporte,
-    esperado, contado: env.valor, diferenca,
+    ...comum, contado: env.valor, diferenca,
     certo: Math.abs(diferenca) <= TOLERANCIA,
     paraDepositar: env.valor,
-    nPagamentos: doTurno.length, nFaturas: faturas.length,
   }
 }
 
@@ -384,6 +394,12 @@ export interface EntradaDoBalanco {
   saidas: Saida[]
   envelopes: Envelope[]
   depositos: Deposito[]
+  /**
+   * O ultimo fecho antes do mes. O troco que ele deixou na caixa abre o primeiro
+   * turno deste mes -- inclusive quando esse fecho e um corte, porque o troco de
+   * um corte esta guardado na linha como em qualquer outro.
+   */
+  anterior?: Envelope | null
 }
 
 export function balanco(e: EntradaDoBalanco): Balanco {
@@ -399,17 +415,12 @@ export function balanco(e: EntradaDoBalanco): Balanco {
   }
 
   /*
-   * A corrente de aberturas arranca a zero em cada mes, e nao no troco que o
-   * ultimo fecho do mes anterior deixou.
-   *
-   * E a mesma regra que parte os turnos: o dinheiro de setembro e de setembro e
-   * deposita-se em setembro, o de outubro e de outubro, e nao ha passagens de um
-   * para o outro. Quando mesmo assim ficou troco na caixa de um mes para o
-   * outro, escreve-se a abertura a mao no primeiro fecho -- a saida que sempre
-   * existiu para o primeiro turno de todos.
+   * A corrente arranca no troco que o ultimo fecho do mes anterior deixou na
+   * caixa -- e so no troco. O dinheiro que esse mes cobrou nao vem atras: ficou
+   * la e foi depositado la, que e o ponto dos cortes de mes.
    */
   const linhas: LinhaDoMes[] = []
-  let abertura = 0
+  let abertura = e.anterior?.transporte ?? 0
   let acumulado = 0
   for (const env of ordenados) {
     const faturas = porEnvelope.get(env.id) ?? []
@@ -574,13 +585,16 @@ const env = (x: Record<string, unknown>) => ({
 
 export async function fetchMes(caixaId: string, de: string, ate: string) {
   // primeiro os fechos, porque são eles que dizem de que pagamentos se precisa
-  const [s, e, d] = await Promise.all([
+  const [s, e, d, ant] = await Promise.all([
     supabase.from('cx_saidas').select('*').eq('caixa_id', caixaId)
       .gte('dia', de).lte('dia', ate).order('dia'),
     supabase.from('cx_envelopes').select('*').eq('caixa_id', caixaId)
       .gte('dia', de).lte('dia', ate).order('inicio'),
     supabase.from('cx_depositos').select('*').eq('caixa_id', caixaId)
       .gte('dia', de).lte('dia', ate).order('dia'),
+    // o troco que o ultimo fecho antes do mes deixou abre o primeiro turno
+    supabase.from('cx_envelopes').select('*').eq('caixa_id', caixaId)
+      .lt('dia', de).order('inicio', { ascending: false }).limit(1).maybeSingle(),
   ])
   for (const x of [s, e, d] as { error: unknown }[]) if (x.error) throw x.error
 
@@ -613,6 +627,7 @@ export async function fetchMes(caixaId: string, de: string, ate: string) {
     saidas: (s.data ?? []).map(valor) as Saida[],
     envelopes,
     depositos: (d.data ?? []).map(valor) as Deposito[],
+    anterior: ant.data ? env(ant.data as Record<string, unknown>) : null,
   }
 }
 

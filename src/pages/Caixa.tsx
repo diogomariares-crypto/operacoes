@@ -19,7 +19,7 @@ import { Caixa as CaixaEscolha } from '../components/BulkEdit'
 
 type Dados = {
   recebido: Recebido[]; saidas: Saida[]; envelopes: Envelope[]
-  depositos: Deposito[]
+  depositos: Deposito[]; anterior: Envelope | null
 }
 
 /**
@@ -92,7 +92,7 @@ export default function CaixaPage() {
   const b: Balanco | null = useMemo(
     () => (d ? balanco({
       mes, recebido: d.recebido, saidas: d.saidas,
-      envelopes: d.envelopes, depositos: d.depositos,
+      envelopes: d.envelopes, depositos: d.depositos, anterior: d.anterior,
     }) : null),
     [d, mes])
 
@@ -117,7 +117,7 @@ export default function CaixaPage() {
   const certo = estaCerto(b)
   const ultimo = d.envelopes.length
     ? [...d.envelopes].sort((a, x) => x.fim.localeCompare(a.fim))[0]
-    : null
+    : d.anterior
 
   return (
     <div className="space-y-4">
@@ -365,11 +365,9 @@ function aberturaDe(b: Balanco, id: string) {
   return b.linhas.find(l => l.envelope.id === id)?.contas.abertura ?? 0
 }
 
-/** A abertura sugerida a um turno novo: o que o ultimo fecho a vista deixou. */
+/** A abertura sugerida a um turno novo: o troco que o ultimo fecho a vista deixou. */
 function aberturaParaNovo(b: Balanco, ultimo: Envelope | null) {
-  const ultimaLinha = b.linhas[b.linhas.length - 1]
-  if (ultimaLinha) return ultimaLinha.contas.transporte
-  return ultimo?.corte ? 0 : (ultimo?.transporte ?? 0)
+  return b.linhas[b.linhas.length - 1]?.contas.transporte ?? ultimo?.transporte ?? 0
 }
 
 /* ------------------------------------------------------------------ avisos */
