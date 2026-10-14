@@ -139,6 +139,9 @@ export const MODULOS: Modulo[] = [
     icone: '♨',
     paginas: [
       { to: '/fb', label: 'Dia' },
+      // A checklist da manha e seguida ao telemovel por quem esta de turno,
+      // por isso nao leva papel nenhum: quem entra no F&B ve-a.
+      { to: '/fb-checklist', label: 'Checklist' },
       { to: '/fb-painel', label: 'Painel', soPainel: true },
       { to: '/fb-pa', label: 'Pequenos-almoços', soPa: true },
       { to: '/fb-importar', label: 'Importar Valentinas', soAdmin: true },

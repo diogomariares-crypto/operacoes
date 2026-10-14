@@ -18,6 +18,7 @@ import Turno from './pages/Turno'
 import TurnoHistorico from './pages/TurnoHistorico'
 import Parque from './pages/Parque'
 import FbFaturacao from './pages/FbFaturacao'
+import FbChecklist from './pages/FbChecklist'
 import FbImportar from './pages/FbImportar'
 import FbDashboard from './pages/FbDashboard'
 import FbPequenosAlmocos from './pages/FbPequenosAlmocos'
@@ -130,6 +131,7 @@ function Interior() {
         <Route path="/horarios" element={<SoAdmin><Horarios /></SoAdmin>} />
         <Route path="/parque" element={<Parque />} />
         <Route path="/fb" element={<FbFaturacao />} />
+        <Route path="/fb-checklist" element={<FbChecklist />} />
         <Route path="/fb-painel" element={<SoPainel><FbDashboard /></SoPainel>} />
         <Route path="/fb-pa" element={<SoPa><FbPequenosAlmocos /></SoPa>} />
         <Route path="/fb-importar" element={<SoAdmin><FbImportar /></SoAdmin>} />
