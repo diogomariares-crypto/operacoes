@@ -5,12 +5,18 @@
  * há? De um lado os quartos a limpar, de outro as horas das pessoas em turno
  * mais o outsourcing, menos os **ajustes**.
  *
- * Os ajustes são as horas em que essas mesmas pessoas não estiveram nos
- * quartos: zonas comuns, inventário, uma formação, uma avaria. Lançam-se para
- * serem subtraídas às horas disponíveis, e é isso que faz a conta responder à
- * pergunta certa — quanto tempo foi de facto gasto nos quartos, e não quanto
- * tempo havia ao todo. Chamavam-se «limpezas gerais», nome que dizia um exemplo
- * em vez de dizer a função.
+ * Os ajustes correm para os dois lados, porque a realidade também:
+ *
+ *   **retiram** — horas das pessoas em turno que não foram para os quartos:
+ *                 zonas comuns, inventário, uma formação, uma avaria
+ *   **acrescentam** — ajuda nos quartos de quem não está contado nas pessoas em
+ *                 turno nem é outsourcing contratado: a governanta que foi aos
+ *                 quartos, alguém da receção que deu uma mão. Horas a mais sem
+ *                 custo a mais
+ *
+ * É isso que faz a conta responder à pergunta certa — quanto tempo foi de facto
+ * gasto nos quartos, e não quanto tempo havia ao todo. Chamavam-se «limpezas
+ * gerais», nome que dizia um exemplo em vez de dizer a função.
  *
  * Um quarto limpa-se de duas maneiras, e não custam o mesmo:
  *
@@ -75,9 +81,18 @@ export interface Dia {
 export interface Ajuste {
   id: string
   dia: string
-  /** Para onde foram as horas. Serve para depois se saber o porquê, não só o quanto. */
+  /** Para onde foram as horas, ou de onde vieram. O porquê, não só o quanto. */
   descricao: string
   minutos: number
+  /**
+   * Para que lado o ajuste puxa.
+   *
+   * `false` tira horas de produção — é o caso de origem e continua a ser a
+   * esmagadora maioria. `true` acrescenta: ajuda nos quartos de quem não está
+   * contado nas pessoas em turno. Guardam-se na mesma tabela porque são a mesma
+   * coisa com sinais opostos, e separá-las em duas tabelas só duplicava código.
+   */
+  acrescenta: boolean
 }
 
 export interface Turno {
@@ -114,13 +129,16 @@ export const minutosNecessarios = (d: Pick<Dia,
 /**
  * O que sobrou para os quartos.
  *
- * As pessoas em turno dão o bolo de horas; o outsourcing acrescenta; os ajustes
- * tiram as horas dessas mesmas pessoas que não foram para os quartos. O que fica
- * é o tempo que esteve de facto disponível para quartos.
+ * As pessoas em turno dão o bolo de horas. O outsourcing acrescenta, e os
+ * ajustes puxam para os dois lados: tiram as horas de quem estava em turno e não
+ * foi aos quartos, acrescentam a ajuda de quem foi aos quartos sem estar
+ * contado. O que fica é o tempo que esteve de facto disponível para quartos.
  */
 export const minutosDisponiveis = (
-  d: Pick<Dia, 'staff' | 'horas_por_turno'>, ajustesMin: number, outsourcingMin = 0,
-) => Math.max(0, d.staff * d.horas_por_turno * 60 + outsourcingMin - ajustesMin)
+  d: Pick<Dia, 'staff' | 'horas_por_turno'>,
+  ajustesMenosMin: number, ajustesMaisMin = 0, outsourcingMin = 0,
+) => Math.max(0, d.staff * d.horas_por_turno * 60
+                 + outsourcingMin + ajustesMaisMin - ajustesMenosMin)
 
 export interface Balanco {
   necessarios: number
@@ -130,19 +148,23 @@ export interface Balanco {
   /** A diferença traduzida em pessoas de um turno. */
   pessoas: number
   /** Horas de gente em turno que não foram para os quartos, em minutos. */
-  ajustesMin: number
+  ajustesMenosMin: number
+  /** Horas de ajuda nos quartos de quem não está contado em turno, em minutos. */
+  ajustesMaisMin: number
   outsourcingMin: number
 }
 
-export function balanco(d: Dia, ajustesMin: number, outsourcingMin = 0): Balanco {
+export function balanco(
+  d: Dia, ajustesMenosMin: number, ajustesMaisMin = 0, outsourcingMin = 0,
+): Balanco {
   const necessarios = minutosNecessarios(d)
-  const disponiveis = minutosDisponiveis(d, ajustesMin, outsourcingMin)
+  const disponiveis = minutosDisponiveis(d, ajustesMenosMin, ajustesMaisMin, outsourcingMin)
   const diferenca = necessarios - disponiveis
   const base = d.horas_por_turno * 60
   return {
     necessarios, disponiveis, diferenca,
     pessoas: base > 0 ? diferenca / base : 0,
-    ajustesMin, outsourcingMin,
+    ajustesMenosMin, ajustesMaisMin, outsourcingMin,
   }
 }
 
@@ -299,7 +321,9 @@ export async function fetchAjustes(hotelId: string, de: string, ate: string): Pr
     .from('hk_limpezas').select('*').eq('hotel_id', hotelId)
     .gte('dia', de).lte('dia', ate).order('dia')
   if (error) throw error
-  return (data ?? []).map(r => ({ ...r, minutos: num(r.minutos) })) as Ajuste[]
+  return (data ?? []).map(r => ({
+    ...r, minutos: num(r.minutos), acrescenta: r.acrescenta === true,
+  })) as Ajuste[]
 }
 
 /**
@@ -385,7 +409,13 @@ export async function guardarDias(
  */
 export async function definirAjusteDoDia(
   hotelId: string, dia: string, minutos: number, existentes: Ajuste[],
+  acrescenta = false,
 ) {
+  /*
+   * Cada lado tem o seu campo rápido na tabela, por isso só se olha para os
+   * ajustes desse lado: pôr 2h no «+» não pode mexer no «−» do mesmo dia.
+   */
+  existentes = existentes.filter(x => x.acrescenta === acrescenta)
   if (existentes.length > 1) throw new Error(
     `${dmyCurto(dia)} tem vários ajustes discriminados — edita-os no Registo do dia.`)
   const actual = existentes[0]
@@ -399,9 +429,12 @@ export async function definirAjusteDoDia(
     if (error) throw error
     return
   }
-  // sem descrição não se sabe para onde foram as horas; esta é a que o campo
+  // sem descrição não se sabe de que horas se trata; estas são as que o campo
   // rápido da tabela assume, e no detalhe do dia pode-se discriminar melhor
-  await juntarAjuste(hotelId, { dia, descricao: 'Horas fora dos quartos', minutos })
+  await juntarAjuste(hotelId, {
+    dia, minutos, acrescenta,
+    descricao: acrescenta ? 'Ajuda nos quartos' : 'Horas fora dos quartos',
+  })
 }
 
 const dmyCurto = (iso: string) => `${iso.slice(8)}/${iso.slice(5, 7)}`

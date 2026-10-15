@@ -28,7 +28,7 @@ export default function HkMapa() {
     const de = `${mes}-01`, ate = lastDayOfMonth(mes)
     // Doze meses para trás, para o gráfico ter com que comparar.
     const anoDe = `${Number(mes.slice(0, 4)) - 1}-01-01`
-    const juntar = (ds: Dia[], ls: { dia: string; minutos: number }[],
+    const juntar = (ds: Dia[], ls: { dia: string; minutos: number; acrescenta: boolean }[],
                     ts: { dia: string; hora_inicio: string; hora_fim: string; almoco_min: number }[]) => {
       const porDia = <T extends { dia: string }>(xs: T[]) => {
         const m: Record<string, T[]> = {}
@@ -38,8 +38,10 @@ export default function HkMapa() {
       const lm = porDia(ls), tm = porDia(ts)
       return ds.map(d => ({
         d,
+        // os ajustes vao por lado; passar o total a um so lado falseava o dia
         b: balanco(d,
-          (lm[d.dia] ?? []).reduce((s, x) => s + x.minutos, 0),
+          (lm[d.dia] ?? []).filter(x => !x.acrescenta).reduce((s, x) => s + x.minutos, 0),
+          (lm[d.dia] ?? []).filter(x => x.acrescenta).reduce((s, x) => s + x.minutos, 0),
           (tm[d.dia] ?? []).reduce((s, x) => s + minutosDoTurno(x), 0)),
       }))
     }
@@ -62,11 +64,12 @@ export default function HkMapa() {
 
   const T = useMemo(() => {
     const t = { dias: linhas.length, necessarios: 0, disponiveis: 0, pessoas: 0,
-                quartos: 0, saidas: 0, staff: 0, ajustes: 0, outsourcing: 0 }
+                quartos: 0, saidas: 0, staff: 0, ajustesMenos: 0, ajustesMais: 0, outsourcing: 0 }
     for (const { d, b } of linhas) {
       t.necessarios += b.necessarios; t.disponiveis += b.disponiveis; t.pessoas += b.pessoas
       t.quartos += d.quartos_ocupados; t.saidas += d.saidas; t.staff += d.staff
-      t.ajustes += b.ajustesMin; t.outsourcing += b.outsourcingMin
+      t.ajustesMenos += b.ajustesMenosMin; t.ajustesMais += b.ajustesMaisMin
+      t.outsourcing += b.outsourcingMin
     }
     return t
   }, [linhas])

@@ -91,10 +91,27 @@ const dia = {
 ok('sem ajustes, 3 pessoas dao 21h', H.balanco(dia, 0).disponiveis, 1260)
 ok('com 1:30 de ajustes sobram 19h30', H.balanco(dia, 90).disponiveis, 1170)
 ok('a fazer sao 10x20 + 5x45 = 425', H.balanco(dia, 90).necessarios, 425)
-ok('o ajuste aparece no balanco', H.balanco(dia, 90).ajustesMin, 90)
+ok('o ajuste aparece no balanco', H.balanco(dia, 90).ajustesMenosMin, 90)
 // os ajustes nunca empurram as disponiveis para negativo
 ok('ajustes maiores que o turno dao zero, nao negativo',
   H.balanco(dia, 5000).disponiveis, 0)
+
+console.log('\nos dois lados do ajuste')
+// 3 pessoas x 7h = 1260. menos 1:30 (90), mais 2:00 (120) -> 1290
+ok('o lado + acrescenta horas', H.balanco(dia, 90, 120).disponiveis, 1290)
+ok('so com ajuda, sem nada a tirar', H.balanco(dia, 0, 120).disponiveis, 1380)
+ok('os dois lados aparecem no balanco separados',
+  [H.balanco(dia, 90, 120).ajustesMenosMin, H.balanco(dia, 90, 120).ajustesMaisMin], [90, 120])
+ok('o outsourcing continua a somar por fora',
+  H.balanco(dia, 90, 120, 60).disponiveis, 1350)
+// o que o TypeScript nao podia apanhar: tres numeros na ordem errada
+ok('a ordem dos argumentos e menos, mais, outsourcing',
+  H.balanco(dia, 0, 0, 120).disponiveis, H.balanco(dia, 0, 120, 0).disponiveis)
+ok('e tirar 120 nao e o mesmo que acrescentar 120',
+  H.balanco(dia, 120, 0).disponiveis === H.balanco(dia, 0, 120).disponiveis, false)
+// a ajuda nao salva um dia em que se tirou tudo
+ok('tirar tudo e ajudar pouco ainda da pouco',
+  H.balanco(dia, 5000, 120).disponiveis, 0)
 
 rmSync(tmp, { recursive: true, force: true })
 console.log(`\n${feitos} verificacoes, ${falhas} falha(s)`)

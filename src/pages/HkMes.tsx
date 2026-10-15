@@ -5,12 +5,13 @@
  * escrevem para corrigir. Escrevem-se aqui duas coisas, e são as duas metades
  * da mesma pergunta:
  *
- *   Pessoas — quantas estiveram em turno a trabalhar nos quartos
- *   Ajustes — quantas horas dessas mesmas pessoas NÃO foram para os quartos
+ *   Pessoas    — quantas estiveram em turno a trabalhar nos quartos
+ *   Ajustes −  — horas dessas mesmas pessoas que NÃO foram para os quartos
+ *   Ajustes +  — horas de ajuda nos quartos de quem não está contado em turno
  *
- * Os ajustes subtraem-se às horas disponíveis, e é isso que faz a coluna
- * «Dispon.» dizer o tempo que esteve de facto em quartos em vez do tempo que
- * havia ao todo. Escrevem-se em horas e minutos — 1:30.
+ * Os dois ajustes puxam a coluna «Dispon.» para lados opostos, e é isso que a
+ * faz dizer o tempo que esteve de facto em quartos em vez do tempo que havia ao
+ * todo. Escrevem-se em horas e minutos — 1:30.
  *
  * Cada dia abre para o detalhe — a nota, os ajustes discriminados e o
  * outsourcing — para não ser preciso sair da tabela para tratar de um dia.
@@ -39,8 +40,10 @@ interface Linha {
   saidas: number
   staff: number
   /** Horas de gente em turno que não foram para os quartos, em minutos. */
-  ajustesMin: number
-  /** Ajustes discriminados: mais do que um não se deixa esmagar por um número. */
+  ajustesMenosMin: number
+  /** Horas de ajuda nos quartos de quem não está contado em turno. */
+  ajustesMaisMin: number
+  /** Ajustes discriminados: mais do que um por lado não se deixa esmagar por um número. */
   ajustes: Ajuste[]
   outsourcing: Turno[]
   nota: string | null
@@ -101,7 +104,8 @@ export default function HkMes() {
           quartos: d?.quartos_ocupados ?? o?.quartos ?? 0,
           saidas: d?.saidas ?? o?.saidas ?? 0,
           staff: d?.staff ?? 0,
-          ajustesMin: limp.reduce((s, x) => s + x.minutos, 0),
+          ajustesMenosMin: limp.filter(x => !x.acrescenta).reduce((s, x) => s + x.minutos, 0),
+          ajustesMaisMin: limp.filter(x => x.acrescenta).reduce((s, x) => s + x.minutos, 0),
           ajustes: limp,
           outsourcing: tm[dia] ?? [],
           nota: d?.nota ?? null,
@@ -126,7 +130,8 @@ export default function HkMes() {
     const o = original[l.dia]
     if (!o) return false
     return l.staff !== o.staff || l.quartos !== o.quartos || l.saidas !== o.saidas ||
-           l.ajustesMin !== o.ajustesMin || l.nota !== o.nota
+           l.ajustesMenosMin !== o.ajustesMenosMin ||
+           l.ajustesMaisMin !== o.ajustesMaisMin || l.nota !== o.nota
   }
   const alterados = linhas.filter(mudou)
 
@@ -146,8 +151,11 @@ export default function HkMes() {
       horas_por_turno: l.horas_por_turno,
     })), email)
     for (const l of pend) {
-      if (l.ajustesMin === original[l.dia].ajustesMin) continue
-      await definirAjusteDoDia(hotelId, l.dia, l.ajustesMin, l.ajustes)
+      const o = original[l.dia]
+      if (l.ajustesMenosMin !== o.ajustesMenosMin)
+        await definirAjusteDoDia(hotelId, l.dia, l.ajustesMenosMin, l.ajustes, false)
+      if (l.ajustesMaisMin !== o.ajustesMaisMin)
+        await definirAjusteDoDia(hotelId, l.dia, l.ajustesMaisMin, l.ajustes, true)
     }
     return pend.length
   }
@@ -182,7 +190,7 @@ export default function HkMes() {
       { id: '', dia: l.dia, nota: l.nota, quartos_ocupados: l.quartos, saidas: l.saidas,
         staff: l.staff, min_por_quarto: l.min_por_quarto, min_por_saida: l.min_por_saida,
         horas_por_turno: l.horas_por_turno },
-      l.ajustesMin,
+      l.ajustesMenosMin, l.ajustesMaisMin,
       l.outsourcing.reduce((s, t) => s + minutosDoTurno(t), 0)),
   })), [linhas])
 
@@ -216,11 +224,14 @@ export default function HkMes() {
   const camposBulk: CampoBulk[] = [
     { chave: 'staff', rotulo: 'Turnos de pessoal', tipo: 'numero',
       patch: v => ({ staff: Math.max(0, Number(v)) }) },
-    { chave: 'ajustesMin', rotulo: 'Ajustes — horas fora dos quartos (h:mm)', tipo: 'texto',
+    { chave: 'ajustesMenosMin', rotulo: 'Ajustes − horas fora dos quartos (h:mm)', tipo: 'texto',
       nota: 'Horas de gente em turno que não foram para os quartos. Escreve-se 1:30. '
           + 'Os dias que tenham vários ajustes discriminados ficam como estão — '
           + 'um número só não os pode substituir.',
-      patch: v => ({ ajustesMin: minutosDeTexto(String(v)) ?? 0 }) },
+      patch: v => ({ ajustesMenosMin: minutosDeTexto(String(v)) ?? 0 }) },
+    { chave: 'ajustesMaisMin', rotulo: 'Ajustes + ajuda nos quartos (h:mm)', tipo: 'texto',
+      nota: 'Horas de ajuda nos quartos de quem não está contado em turno. Escreve-se 1:30.',
+      patch: v => ({ ajustesMaisMin: minutosDeTexto(String(v)) ?? 0 }) },
     { chave: 'quartos', rotulo: 'Ocupados (que ficam)', tipo: 'numero',
       nota: 'Isto costuma vir do relatório de turno; só se mexe para corrigir.',
       patch: v => ({ quartos: Math.max(0, Number(v)) }) },
@@ -232,7 +243,9 @@ export default function HkMes() {
   /** Escreve o campo nas linhas escolhidas. Fica por gravar, como tudo o resto. */
   const aplicarBulk = (patch: Record<string, unknown>, campo: CampoBulk) => {
     const escolhidos = new Set(sel.escolhidos())
-    const intocaveis = (l: Linha) => campo.chave === 'ajustesMin' && l.ajustes.length > 1
+    const intocaveis = (l: Linha) =>
+      (campo.chave === 'ajustesMenosMin' && l.ajustes.filter(x => !x.acrescenta).length > 1) ||
+      (campo.chave === 'ajustesMaisMin' && l.ajustes.filter(x => x.acrescenta).length > 1)
     const alvo = new Set(
       linhas.filter(l => escolhidos.has(l.dia) && !intocaveis(l)).map(l => l.dia))
     const saltados = escolhidos.size - alvo.size
@@ -337,8 +350,12 @@ export default function HkMes() {
                 Pessoas
               </th>
               <th className="th !text-right"
-                  title="Horas dessas mesmas pessoas que não foram para os quartos — zonas comuns, inventário, uma formação. Subtraem-se às horas disponíveis. Escreve-se 1:30.">
-                Ajustes
+                  title="Horas das pessoas em turno que NÃO foram para os quartos — zonas comuns, inventário, uma formação. Saem das horas disponíveis. Escreve-se 1:30.">
+                Ajustes −
+              </th>
+              <th className="th !text-right"
+                  title="Horas de ajuda nos quartos de quem não está contado nas pessoas em turno nem é outsourcing contratado — a governanta, alguém da receção. Entram nas horas disponíveis. Escreve-se 1:30.">
+                Ajustes +
               </th>
               <th className="th !text-right">Outsourc.</th>
               <th className="th !text-right">A fazer</th>
@@ -385,22 +402,22 @@ export default function HkMes() {
                           podeEscrever={podeEscrever}
                           onChange={n => mudar(l.dia, { staff: n })} />
 
-                  <td className="td text-right">
-                    {l.ajustes.length > 1 ? (
-                      <button className="text-xs text-slate-500 underline decoration-dotted"
-                              onClick={() => setAberto(detalhe ? null : l.dia)}
-                              title="várias linhas — abre o dia">
-                        {horas(l.ajustesMin)}
-                      </button>
-                    ) : (
-                      <CampoHoras id={`ajustesMin-${l.dia}`}
-                                  className="input ml-auto h-8 w-full max-w-[84px] px-2 text-right text-sm"
-                                  minutos={l.ajustesMin} disabled={!podeEscrever}
-                                  onKeyDown={seguinte('ajustesMin', l.dia)}
-                                  titulo="Horas em que as pessoas deste turno não estiveram nos quartos. Escreve-se 1:30."
-                                  onChange={n => mudar(l.dia, { ajustesMin: Math.max(0, n) })} />
-                    )}
-                  </td>
+                  <CelulaAjuste
+                    dia={l.dia} campo="ajustesMenosMin" minutos={l.ajustesMenosMin}
+                    varios={l.ajustes.filter(x => !x.acrescenta).length > 1}
+                    podeEscrever={podeEscrever} onAbrir={() => setAberto(detalhe ? null : l.dia)}
+                    titulo="Horas em que as pessoas deste turno não estiveram nos quartos. Escreve-se 1:30."
+                    onChange={n => mudar(l.dia, { ajustesMenosMin: n })}
+                    aoLado={seguinte('ajustesMenosMin', l.dia)}
+                  />
+                  <CelulaAjuste
+                    dia={l.dia} campo="ajustesMaisMin" minutos={l.ajustesMaisMin}
+                    varios={l.ajustes.filter(x => x.acrescenta).length > 1}
+                    podeEscrever={podeEscrever} onAbrir={() => setAberto(detalhe ? null : l.dia)}
+                    titulo="Horas de ajuda nos quartos de quem não está contado em turno. Escreve-se 1:30."
+                    mais onChange={n => mudar(l.dia, { ajustesMaisMin: n })}
+                    aoLado={seguinte('ajustesMaisMin', l.dia)}
+                  />
 
                   <td className="td text-right tabular-nums text-slate-500">
                     {outMin ? horas(outMin) : <span className="text-slate-300">—</span>}
@@ -428,12 +445,12 @@ export default function HkMes() {
 
                 detalhe && (
                   <tr key={`${l.dia}-d`} className="border-b border-slate-200 bg-slate-50/80">
-                    <td className="px-3 py-3" colSpan={11}>
+                    <td className="px-3 py-3" colSpan={12}>
                       <Detalhe
                         l={l} param={param} podeEscrever={podeEscrever} ocupado={aGravar}
                         onNota={t => mudar(l.dia, { nota: t })}
-                        onJuntarAjuste={(descricao, minutos) => comPendentes(async () => {
-                          if (hotelId) await juntarAjuste(hotelId, { dia: l.dia, descricao, minutos })
+                        onJuntarAjuste={(descricao, minutos, acrescenta) => comPendentes(async () => {
+                          if (hotelId) await juntarAjuste(hotelId, { dia: l.dia, descricao, minutos, acrescenta })
                         })}
                         onApagarAjuste={id => comPendentes(() => apagarAjuste(id))}
                         onJuntarTurno={t => comPendentes(async () => {
@@ -536,7 +553,7 @@ function Detalhe({
   podeEscrever: boolean
   ocupado: boolean
   onNota: (t: string | null) => void
-  onJuntarAjuste: (descricao: string, minutos: number) => Promise<void>
+  onJuntarAjuste: (descricao: string, minutos: number, acrescenta: boolean) => Promise<void>
   onApagarAjuste: (id: string) => Promise<void>
   onJuntarTurno: (t: Omit<TurnoNovo, 'dia'>) => Promise<void>
   onApagarTurno: (id: string) => Promise<void>
@@ -576,15 +593,24 @@ function Detalhe({
             <h5 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
               Ajustes
             </h5>
-            <span className="text-xs tabular-nums text-slate-500">{horas(l.ajustesMin)}</span>
+            <span className="text-xs tabular-nums text-slate-500">
+              −{horas(l.ajustesMenosMin)} · +{horas(l.ajustesMaisMin)}
+            </span>
           </div>
           <p className="mt-0.5 text-[11px] text-slate-400">
-            Horas das pessoas em turno que não foram para os quartos. Saem das
-            horas disponíveis.
+            <strong className="font-medium">−</strong> horas das pessoas em turno
+            que não foram para os quartos. <strong className="font-medium">+</strong> ajuda
+            nos quartos de quem não está contado em turno.
           </p>
           <div className="mt-2 space-y-1">
             {l.ajustes.map(x => (
               <div key={x.id} className="flex items-center gap-2 text-sm">
+                {/* o sinal vem primeiro: numa lista, e o que decide o que o numero quer dizer */}
+                <span className={`grid h-5 w-5 shrink-0 place-items-center rounded text-xs font-bold ${
+                  x.acrescenta ? 'bg-blue-50 text-blue-700' : 'bg-amber-50 text-amber-700'}`}
+                      title={x.acrescenta ? 'Acrescenta horas' : 'Retira horas'}>
+                  {x.acrescenta ? '+' : '−'}
+                </span>
                 <span className="min-w-0 flex-1 truncate text-slate-700">{x.descricao}</span>
                 <span className="shrink-0 tabular-nums text-slate-500">{horas(x.minutos)}</span>
                 {podeEscrever && (
@@ -658,6 +684,52 @@ function Detalhe({
 }
 
 /**
+ * Uma célula de ajuste na tabela do mês.
+ *
+ * Os dois lados são o mesmo campo com sinais opostos, por isso são o mesmo
+ * componente: duplicar o bloco era pedir que daqui a um mês um dos dois ficasse
+ * para trás. O sinal entra como sufixo no título e como cor da moldura, para se
+ * ver de relance em qual se está a escrever.
+ *
+ * Quando o dia tem mais do que um ajuste desse lado, a célula deixa de ser campo
+ * e passa a ser um link para o detalhe — um número só não pode esmagar a lista.
+ */
+function CelulaAjuste({
+  dia, campo, minutos, varios, podeEscrever, mais, titulo, onChange, onAbrir, aoLado,
+}: {
+  dia: string
+  campo: string
+  minutos: number
+  varios: boolean
+  podeEscrever: boolean
+  mais?: boolean
+  titulo: string
+  onChange: (n: number) => void
+  onAbrir: () => void
+  aoLado: (e: React.KeyboardEvent<HTMLInputElement>) => void
+}) {
+  return (
+    <td className="td text-right">
+      {varios ? (
+        <button className="text-xs text-slate-500 underline decoration-dotted"
+                onClick={onAbrir} title="várias linhas — abre o dia">
+          {horas(minutos)}
+        </button>
+      ) : (
+        <CampoHoras
+          id={`${campo}-${dia}`}
+          className={`input ml-auto h-8 w-full max-w-[84px] px-2 text-right text-sm ${
+            minutos ? (mais ? 'border-blue-300' : 'border-amber-300') : ''}`}
+          minutos={minutos} disabled={!podeEscrever}
+          onKeyDown={aoLado} titulo={titulo}
+          onChange={n => onChange(Math.max(0, n))}
+        />
+      )}
+    </td>
+  )
+}
+
+/**
  * Um campo de horas e minutos.
  *
  * Guarda-se em minutos e escreve-se «1:30». O texto que se está a escrever vive
@@ -714,26 +786,50 @@ function NovoAjuste({
   ocupado, onJuntar,
 }: {
   ocupado: boolean
-  onJuntar: (d: string, m: number) => Promise<void>
+  onJuntar: (d: string, m: number, acrescenta: boolean) => Promise<void>
 }) {
   const [descricao, setDescricao] = useState('')
   const [minutos, setMinutos] = useState(0)
+  const [acrescenta, setAcrescenta] = useState(false)
   return (
-    <div className="mt-2 flex flex-wrap items-end gap-2 border-t border-slate-100 pt-2">
-      <div className="min-w-[120px] flex-1">
-        <label className="label">O que foi feito</label>
-        <input className="input h-8 text-sm" value={descricao}
-               onChange={e => setDescricao(e.target.value)} />
+    <div className="mt-2 space-y-2 border-t border-slate-100 pt-2">
+      {/*
+        O lado escolhe-se primeiro e em botões, não numa caixa de marcar: entre
+        tirar e acrescentar horas vai o sinal da conta toda, e isso não se
+        decide num quadradinho que se marca sem ler.
+      */}
+      <div className="flex gap-1">
+        <button
+          onClick={() => setAcrescenta(false)}
+          className={`h-8 flex-1 rounded-lg border text-xs font-medium ${!acrescenta
+            ? 'border-amber-300 bg-amber-50 text-amber-800'
+            : 'border-slate-200 bg-white text-slate-500'}`}
+        >− retira horas</button>
+        <button
+          onClick={() => setAcrescenta(true)}
+          className={`h-8 flex-1 rounded-lg border text-xs font-medium ${acrescenta
+            ? 'border-blue-300 bg-blue-50 text-blue-800'
+            : 'border-slate-200 bg-white text-slate-500'}`}
+        >+ acrescenta horas</button>
       </div>
-      <div className="w-24">
-        <label className="label">Horas</label>
-        <CampoHoras className="input h-8 text-sm" minutos={minutos} onChange={setMinutos} />
+      <div className="flex flex-wrap items-end gap-2">
+        <div className="min-w-[120px] flex-1">
+          <label className="label">
+            {acrescenta ? 'Quem ajudou nos quartos' : 'O que foi feito'}
+          </label>
+          <input className="input h-8 text-sm" value={descricao}
+                 onChange={e => setDescricao(e.target.value)} />
+        </div>
+        <div className="w-24">
+          <label className="label">Horas</label>
+          <CampoHoras className="input h-8 text-sm" minutos={minutos} onChange={setMinutos} />
+        </div>
+        <button className="btn-ghost shrink-0" disabled={ocupado || !descricao.trim() || minutos <= 0}
+                onClick={async () => {
+                  await onJuntar(descricao.trim(), minutos, acrescenta)
+                  setDescricao(''); setMinutos(0)
+                }}>Juntar</button>
       </div>
-      <button className="btn-ghost shrink-0" disabled={ocupado || !descricao.trim() || minutos <= 0}
-              onClick={async () => {
-                await onJuntar(descricao.trim(), minutos)
-                setDescricao(''); setMinutos(0)
-              }}>Juntar</button>
     </div>
   )
 }
