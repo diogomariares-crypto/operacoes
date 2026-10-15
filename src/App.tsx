@@ -49,6 +49,15 @@ function SoPainel({ children }: { children: React.ReactNode }) {
   return podeVerPainel ? <>{children}</> : <Navigate to="/" replace />
 }
 
+/*
+ * Esconder no menu nao chega: o endereco escrito a mao abria a pagina na mesma.
+ * Foi assim que os horarios ficaram alcancaveis depois de os termos fechado.
+ */
+function SoFaturacao({ children }: { children: React.ReactNode }) {
+  const { podeVerFaturacao } = useAuth()
+  return podeVerFaturacao ? <>{children}</> : <Navigate to="/" replace />
+}
+
 function SoPa({ children }: { children: React.ReactNode }) {
   const { podeVerPa } = useAuth()
   return podeVerPa ? <>{children}</> : <Navigate to="/" replace />
@@ -130,7 +139,7 @@ function Interior() {
             toda a casa, tirar o SoAdmin daqui e o soAdmin em src/lib/modulos.ts. */}
         <Route path="/horarios" element={<SoAdmin><Horarios /></SoAdmin>} />
         <Route path="/parque" element={<Parque />} />
-        <Route path="/fb" element={<FbFaturacao />} />
+        <Route path="/fb" element={<SoFaturacao><FbFaturacao /></SoFaturacao>} />
         <Route path="/fb-checklist" element={<FbChecklist />} />
         <Route path="/fb-painel" element={<SoPainel><FbDashboard /></SoPainel>} />
         <Route path="/fb-pa" element={<SoPa><FbPequenosAlmocos /></SoPa>} />

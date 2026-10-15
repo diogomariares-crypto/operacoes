@@ -1,5 +1,11 @@
 export type Department = 'FO' | 'HSK' | 'FB'
-export type AppRole = 'admin' | 'fo' | 'hsk' | 'fb' | 'financeiro' | 'rh'
+/**
+ * `fb_checklist` é o acesso mais pequeno que existe: a checklist da manhã do
+ * F&B e os separadores comuns, sem faturação nem painel. Não dá escrita em
+ * departamento nenhum — ver canWrite em auth.tsx.
+ */
+export type AppRole =
+  'admin' | 'fo' | 'hsk' | 'fb' | 'financeiro' | 'rh' | 'fb_checklist'
 export type PeriodKind = 'semanal' | 'mensal'
 export type CountStatus = 'rascunho' | 'submetido'
 

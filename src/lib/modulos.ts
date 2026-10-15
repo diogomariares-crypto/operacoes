@@ -47,6 +47,8 @@ export interface Pagina {
   soCaixa?: boolean
   /** Visível a quem escreve em pelo menos um departamento. */
   soEscrita?: boolean
+  /** Só visível a quem pode ver a faturação do F&B. */
+  soFaturacao?: boolean
 }
 
 export interface Modulo {
@@ -138,9 +140,12 @@ export const MODULOS: Modulo[] = [
     label: 'F&B',
     icone: '♨',
     paginas: [
-      { to: '/fb', label: 'Dia' },
-      // A checklist da manha e seguida ao telemovel por quem esta de turno,
-      // por isso nao leva papel nenhum: quem entra no F&B ve-a.
+      // A faturacao do dia so se mostra a quem a pode ler. Quem nao pode via a
+      // pagina vazia, porque a base de dados ja lhe recusava as linhas -- o que
+      // parece avaria e nao permissao.
+      { to: '/fb', label: 'Dia', soFaturacao: true },
+      // A checklist da manha e seguida ao telemovel por quem esta de turno, e e
+      // a unica coisa do F&B que o acesso `fb_checklist` ve.
       { to: '/fb-checklist', label: 'Checklist' },
       { to: '/fb-painel', label: 'Painel', soPainel: true },
       { to: '/fb-pa', label: 'Pequenos-almoços', soPa: true },

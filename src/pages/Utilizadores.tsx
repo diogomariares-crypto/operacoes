@@ -19,6 +19,10 @@ const TODOS: { role: AppRole; label: string; desc: string }[] = [
   { role: 'fb', label: 'F&B', desc: 'contagens do restaurante e faturação diária' },
   { role: 'financeiro', label: 'Financeiro', desc: 'painel de faturação e números do negócio' },
   { role: 'rh', label: 'Recursos Humanos', desc: 'fichas de pessoal, vencimentos e custos de empresa' },
+  // O acesso mais pequeno da casa, e fica em ultimo de proposito: quem percorre
+  // a lista de cima para baixo encontra primeiro os papeis de departamento.
+  { role: 'fb_checklist', label: 'F&B — só checklist',
+    desc: 'a checklist da manhã do restaurante, sem faturação nem painel' },
 ]
 
 export default function Utilizadores() {

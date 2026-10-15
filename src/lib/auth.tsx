@@ -24,13 +24,22 @@ interface AuthState {
   podeVerHk: boolean
   /** Vê e conta o dinheiro das caixas: direção e financeiro. */
   podeVerCaixa: boolean
+  /**
+   * Vê a faturação do F&B — a página do Dia e os números do restaurante.
+   *
+   * Existe por causa do acesso `fb_checklist`, que entra no F&B só para a
+   * checklist da manhã. Sem isto, a página do Dia aparecia-lhe no menu (vazia,
+   * porque a base de dados não lha dá) e parecia uma avaria em vez de uma
+   * permissão.
+   */
+  podeVerFaturacao: boolean
   /** Este módulo aparece a esta conta? */
   podeVerModulo: (m: { soAdmin?: boolean; soRh?: boolean; soLav?: boolean
                        soHk?: boolean; soCaixa?: boolean }) => boolean
   /** Esta página aparece a esta conta? */
   podeVerPagina: (p: { soAdmin?: boolean; soPainel?: boolean; soPa?: boolean; soRh?: boolean
                        soLav?: boolean; soHk?: boolean; soCaixa?: boolean
-                       soEscrita?: boolean }) => boolean
+                       soEscrita?: boolean; soFaturacao?: boolean }) => boolean
   canWrite: (d: Department) => boolean
   allowedDepartments: Department[]
   signOut: () => Promise<void>
@@ -99,6 +108,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const podeVerHk = podeVerLavandaria
   // dinheiro: só direção e financeiro, como na base de dados (pode_ver_caixa)
   const podeVerCaixa = podeVerPainel
+  /*
+   * Faturação do F&B: quem trata do restaurante, mais o financeiro e a direção.
+   * É o mesmo conjunto que a base de dados já deixava ler a fb_billing, por isso
+   * isto não tira nada a ninguém — só deixa de mostrar a quem a página já
+   * aparecia vazia.
+   */
+  const podeVerFaturacao = podeVerPainel || roles.includes('fb')
   const canWrite = (d: Department) =>
     isAdmin ||
     (d === 'FO' && roles.includes('fo')) ||
@@ -122,11 +138,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const podeVerPagina = (p: {
     soAdmin?: boolean; soPainel?: boolean; soPa?: boolean; soRh?: boolean
     soLav?: boolean; soHk?: boolean; soCaixa?: boolean; soEscrita?: boolean
+    soFaturacao?: boolean
   }) =>
     (!p.soAdmin || isAdmin) && (!p.soPainel || podeVerPainel) &&
     (!p.soPa || podeVerPa) && (!p.soRh || podeVerRh) &&
     (!p.soLav || podeVerLavandaria) && (!p.soHk || podeVerHk) &&
     (!p.soCaixa || podeVerCaixa) &&
+    (!p.soFaturacao || podeVerFaturacao) &&
     (!p.soEscrita || allowedDepartments.length > 0)
 
   const value: AuthState = {
@@ -145,6 +163,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     podeVerLavandaria,
     podeVerHk,
     podeVerCaixa,
+    podeVerFaturacao,
     podeVerModulo,
     podeVerPagina,
     canWrite,
