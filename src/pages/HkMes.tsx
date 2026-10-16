@@ -13,6 +13,12 @@
  * faz dizer o tempo que esteve de facto em quartos em vez do tempo que havia ao
  * todo. Escrevem-se em horas e minutos — 1:30.
  *
+ * A coluna «Pessoas ±» no fim lê-se como o nome promete: **+ é gente a mais,
+ * − é gente em falta**, em pessoas de um turno. As colunas de tempo ao lado
+ * dizem-no por palavras («faltou», «sobrou») em vez de por sinal, de propósito:
+ * o tempo que falta e as pessoas que sobram têm sinais opostos, e dois sinais
+ * contrários na mesma linha não se leem.
+ *
  * Cada dia abre para o detalhe — a nota, os ajustes discriminados e o
  * outsourcing — para não ser preciso sair da tabela para tratar de um dia.
  */
@@ -305,7 +311,9 @@ export default function HkMes() {
                   hint={T.porPreencher
                     ? `${T.porPreencher} dias com quartos e sem pessoal escrito`
                     : 'todos os dias com movimento preenchidos'} />
-        <StatCard label="Diferença" value={T.dias ? horas(T.necessarios - T.disponiveis) : '—'}
+        {/* Por palavras: ao lado do «Pessoas ±», que conta ao contrário. */}
+        <StatCard label={T.necessarios > T.disponiveis ? 'Faltou tempo' : 'Sobrou tempo'}
+                  value={T.dias ? horas(Math.abs(T.necessarios - T.disponiveis)) : '—'}
                   tone={T.necessarios > T.disponiveis ? 'warn' : 'default'}
                   hint={T.dias
                     ? `${horas(T.necessarios)} a fazer · ${horas(T.disponiveis)} disponíveis, nos ${T.dias} dias escritos`
@@ -360,7 +368,10 @@ export default function HkMes() {
               <th className="th !text-right">Outsourc.</th>
               <th className="th !text-right">A fazer</th>
               <th className="th !text-right">Dispon.</th>
-              <th className="th !text-right">Pessoas ±</th>
+              <th className="th !text-right"
+                  title="+ são pessoas a mais do que o trabalho pedia (azul); − são pessoas em falta (vermelho). Em pessoas de um turno.">
+                Pessoas ±
+              </th>
               <th className="th"></th>
             </tr>
           </thead>

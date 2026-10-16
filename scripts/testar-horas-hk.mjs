@@ -113,6 +113,54 @@ ok('e tirar 120 nao e o mesmo que acrescentar 120',
 ok('tirar tudo e ajudar pouco ainda da pouco',
   H.balanco(dia, 5000, 120).disponiveis, 0)
 
+console.log('\no sinal do «Pessoas ±» — + e gente a MAIS')
+/*
+ * O caso que deu origem a isto: um dia com 45 minutos a sobrar aparecia como
+ * -0,1 numa coluna chamada «Pessoas ±», com a celula azul. O numero dizia
+ * «menos» e a cor dizia «sobra». Quem leu a tabela leu o numero.
+ *
+ * 36 quartos x 15 + 7 saidas x 45 = 855 a fazer; 2 pessoas x 7h30 = 900
+ * disponiveis; sobram 45 minutos, que num turno de 7h30 sao 0,1 pessoas.
+ */
+const d1 = { ...dia, quartos_ocupados: 36, saidas: 7, staff: 2,
+             min_por_quarto: 15, min_por_saida: 45, horas_por_turno: 7.5 }
+ok('o dia que sobra - a fazer', H.balanco(d1, 0).necessarios, 855)
+ok('o dia que sobra - disponivel', H.balanco(d1, 0).disponiveis, 900)
+ok('o dia que sobra - sobram 45 min', H.balanco(d1, 0).diferenca, -45)
+ok('o dia que sobra - pessoas e POSITIVO', H.balanco(d1, 0).pessoas > 0, true)
+ok('o dia que sobra - mostra +0,1', H.pessoasTexto(H.balanco(d1, 0).pessoas), '+0,1')
+// e a cor desse dia continua azul, como sempre esteve: so o sinal mudou
+ok('o dia que sobra - continua azul',
+  H.corDoBalanco(H.balanco(d1, 0).pessoas).startsWith('rgba(57, 135, 229'), true)
+
+// um dia a que falta gente a serio: 850 a fazer, 1 pessoa x 7h = 420
+const d2 = { ...dia, quartos_ocupados: 20, saidas: 10, staff: 1 }
+ok('o dia que falta - diferenca de tempo e positiva (falta tempo)',
+  H.balanco(d2, 0).diferenca, 430)
+ok('o dia que falta - pessoas e NEGATIVO', H.balanco(d2, 0).pessoas < 0, true)
+ok('o dia que falta - mostra -1,0', H.pessoasTexto(H.balanco(d2, 0).pessoas), '−1,0')
+ok('o dia que falta - fica vermelho',
+  H.corDoBalanco(H.balanco(d2, 0).pessoas).startsWith('rgba(227, 73, 72'), true)
+
+// uma diferenca pequena nao pinta nada, e isso nao e falta de cor: e um dia
+// que fechou praticamente certo
+ok('5 minutos de diferenca ficam cinzentos',
+  H.corDoBalanco(H.balanco({ ...dia, staff: 1 }, 0).pessoas), '#f0efec')
+
+// a regra em bruto: diferenca e pessoas tem sinais opostos, de proposito
+ok('diferenca e pessoas apontam para lados contrarios',
+  Math.sign(H.balanco(d2, 0).diferenca) === -Math.sign(H.balanco(d2, 0).pessoas), true)
+// uma pessoa inteira a mais da exactamente +1,0
+const d3 = { ...dia, staff: 2, quartos_ocupados: 0, saidas: 0 }
+// 2 x 7h = 840 disponivel, 0 a fazer -> 840/420 = 2 pessoas a mais
+ok('duas pessoas sem trabalho dao +2,0',
+  H.pessoasTexto(H.balanco(d3, 0).pessoas), '+2,0')
+ok('fechar certo da zero, sem sinal',
+  H.pessoasTexto(H.balanco({ ...dia, staff: 1, quartos_ocupados: 0, saidas: 0,
+                              horas_por_turno: 0 }, 0).pessoas), '0,0')
+ok('fechar certo fica cinzento',
+  H.corDoBalanco(0), '#f0efec')
+
 rmSync(tmp, { recursive: true, force: true })
 console.log(`\n${feitos} verificacoes, ${falhas} falha(s)`)
 process.exit(falhas ? 1 : 0)

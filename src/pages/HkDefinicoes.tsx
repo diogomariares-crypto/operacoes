@@ -74,7 +74,13 @@ export default function HkDefinicoes() {
           precisa de {horas(b.necessarios)} e tem {horas(b.disponiveis)} —{' '}
           {b.diferenca === 0 ? 'fecha certo'
             : b.diferenca > 0 ? `faltam ${horas(b.diferenca)}` : `sobram ${horas(-b.diferenca)}`}
-          , ou seja <strong>{pessoasTexto(b.pessoas)} pessoas</strong>.
+          {/* abaixo de meia décima arredondaria para «0,0 pessoas a menos» */}
+          {Math.abs(b.pessoas) >= 0.05 && <>
+            , ou seja <strong>
+              {pessoasTexto(Math.abs(b.pessoas)).replace('+', '')} pessoas
+              {b.pessoas > 0 ? ' a mais' : ' a menos'}
+            </strong>
+          </>}.
         </div>
 
         <p className="mt-2 text-xs text-slate-500">

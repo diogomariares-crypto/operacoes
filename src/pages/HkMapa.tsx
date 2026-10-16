@@ -126,7 +126,11 @@ export default function HkMapa() {
                   hint={`${qty(T.quartos + T.saidas)} quartos limpos · ${qty(T.saidas)} saídas`} />
         <StatCard label="Trabalho a fazer" value={horas(T.necessarios)}
                   hint={`${horas(T.disponiveis)} disponíveis`} />
-        <StatCard label="Diferença no mês" value={horas(T.necessarios - T.disponiveis)}
+        {/* Com palavras, e não com sinal: ao lado do «Pessoas ±», que conta ao
+            contrário (positivo é gente a mais), um número com sinal aqui dava
+            dois sinais opostos lado a lado. */}
+        <StatCard label={T.necessarios > T.disponiveis ? 'Faltou tempo no mês' : 'Sobrou tempo no mês'}
+                  value={horas(Math.abs(T.necessarios - T.disponiveis))}
                   tone={T.necessarios > T.disponiveis ? 'warn' : 'default'}
                   hint={`${qty(T.staff)} turnos de pessoal`} />
         <StatCard label="Pessoas ± por dia"
@@ -146,12 +150,15 @@ export default function HkMapa() {
           {Array.from({ length: nDias }, (_, i) => {
             const iso = `${mes}-${String(i + 1).padStart(2, '0')}`
             const l = porDia[iso]
+            // por palavras: o número do quadrado já conta ao contrário deste
+            const dif = !l ? '' : l.b.diferenca > 0 ? `faltam ${horas(l.b.diferenca)}`
+              : l.b.diferenca < 0 ? `sobram ${horas(-l.b.diferenca)}` : 'fecha certo'
             return (
               <button
                 key={iso}
                 onClick={() => nav('/hk')}
                 title={l
-                  ? `${dmy(iso)} · ${qty(l.d.quartos_ocupados)} de continuação, ${qty(l.d.saidas)} saídas, ${qty(l.d.staff)} turnos · ${horas(l.b.diferenca)}`
+                  ? `${dmy(iso)} · ${qty(l.d.quartos_ocupados)} de continuação, ${qty(l.d.saidas)} saídas, ${qty(l.d.staff)} turnos · ${dif}`
                   : `${dmy(iso)} — por registar`}
                 className={`h-[72px] rounded-lg border px-2 py-1.5 text-left ${
                   l ? 'border-slate-200' : 'border-dashed border-slate-200'}`}
@@ -177,7 +184,7 @@ export default function HkMapa() {
 
         <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-slate-500">
           <span className="flex items-center gap-1.5">
-            <span className="h-3 w-3 rounded" style={{ backgroundColor: corDoBalanco(-1.5) }} />
+            <span className="h-3 w-3 rounded" style={{ backgroundColor: corDoBalanco(1.5) }} />
             sobra gente
           </span>
           <span className="flex items-center gap-1.5">
@@ -185,7 +192,7 @@ export default function HkMapa() {
             equilibrado
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="h-3 w-3 rounded" style={{ backgroundColor: corDoBalanco(1.5) }} />
+            <span className="h-3 w-3 rounded" style={{ backgroundColor: corDoBalanco(-1.5) }} />
             falta gente
           </span>
           <span className="ml-auto">
@@ -214,7 +221,7 @@ export default function HkMapa() {
           altura={220}
         />
         <p className="mt-1 text-xs text-slate-400">
-          Acima de zero faltou gente; abaixo, sobrou.
+          Acima de zero sobrou gente; abaixo, faltou.
         </p>
       </div>
     </div>

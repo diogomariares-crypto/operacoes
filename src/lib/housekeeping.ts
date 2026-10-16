@@ -143,9 +143,24 @@ export const minutosDisponiveis = (
 export interface Balanco {
   necessarios: number
   disponiveis: number
-  /** Positivo = falta tempo; negativo = sobra. */
+  /**
+   * Tempo a mais que era preciso: positivo = falta tempo, negativo = sobra.
+   *
+   * **Atenção: tem o sinal ao contrário do `pessoas`.** Este campo só aparece
+   * no ecrã acompanhado da palavra («faltam 45m», «sobram 45m»), onde o sinal
+   * nunca se lê sozinho. O `pessoas` aparece como número com + e −, e aí a
+   * leitura natural manda ao contrário — ver abaixo.
+   */
   diferenca: number
-  /** A diferença traduzida em pessoas de um turno. */
+  /**
+   * A mesma diferença em pessoas de um turno, **com o sinal da leitura
+   * natural**: positivo = pessoas a mais, negativo = pessoas em falta.
+   *
+   * A coluna chama-se «Pessoas ±». Num sítio assim, +0,6 só pode querer dizer
+   * «tenho 0,6 pessoas a mais» — foi assim que se leu na primeira vez que
+   * alguém olhou para a tabela, e estava ao contrário. O sinal segue quem lê,
+   * não a conta de onde vem.
+   */
   pessoas: number
   /** Horas de gente em turno que não foram para os quartos, em minutos. */
   ajustesMenosMin: number
@@ -163,7 +178,8 @@ export function balanco(
   const base = d.horas_por_turno * 60
   return {
     necessarios, disponiveis, diferenca,
-    pessoas: base > 0 ? diferenca / base : 0,
+    // -diferenca de propósito: positivo = gente a mais. Ver `Balanco.pessoas`.
+    pessoas: base > 0 ? -diferenca / base : 0,
     ajustesMenosMin, ajustesMaisMin, outsourcingMin,
   }
 }
@@ -212,7 +228,9 @@ export function corDoBalanco(pessoas: number | null): string {
   // acima de uma pessoa e meia a cor satura; o número continua a diferenciar
   const forca = Math.min(Math.abs(pessoas) / 1.5, 1) * 0.65
   if (forca < 0.02) return NEUTRO
-  return `rgba(${pessoas > 0 ? POLO_FALTA : POLO_SOBRA}, ${forca.toFixed(3)})`
+  // `pessoas` positivo é gente a mais, logo azul. A cor não mudou: o que mudou
+  // foi o sinal que lhe chega. O dia que era azul continua azul.
+  return `rgba(${pessoas > 0 ? POLO_SOBRA : POLO_FALTA}, ${forca.toFixed(3)})`
 }
 
 export const pessoasTexto = (p: number) =>
