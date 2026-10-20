@@ -1,6 +1,7 @@
 import { HashRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { AuthProvider, useAuth } from './lib/auth'
 import { AppProvider, useApp } from './lib/appState'
+import { CAMINHO_CHECKLIST } from './lib/modulos'
 
 import { ToastProvider, Loading } from './components/ui'
 import Shell from './components/Shell'
@@ -17,6 +18,7 @@ import Historico from './pages/Historico'
 import Turno from './pages/Turno'
 import TurnoHistorico from './pages/TurnoHistorico'
 import Parque from './pages/Parque'
+import SalaEventos from './pages/SalaEventos'
 import FbFaturacao from './pages/FbFaturacao'
 import FbChecklist from './pages/FbChecklist'
 import FbImportar from './pages/FbImportar'
@@ -90,6 +92,7 @@ function SoHk({ children }: { children: React.ReactNode }) {
 
 function Interior() {
   const { ready, error, hotels } = useApp()
+  const { soChecklist } = useAuth()
   const { pathname } = useLocation()
   if (!ready) return <Loading />
   if (error) {
@@ -111,6 +114,30 @@ function Interior() {
       </div>
     )
   }
+  /*
+   * O acesso `fb_checklist` tem uma app com uma página.
+   *
+   * Isto não é um `SoChecklist` a mais a embrulhar rotas: é a lista de rotas a
+   * ser outra. Os guardas por página protegem o que alguém se lembrou de
+   * proteger — foi assim que os horários ficaram alcançáveis por endereço
+   * escrito à mão depois de os termos fechado. Aqui não há nada para esquecer:
+   * a página que não está nestas três linhas não existe para esta conta.
+   *
+   * A conta própria fica, porque é dela: é onde muda a palavra-passe e liga o
+   * autenticador, e a base de dados só lhe dá a sua própria linha.
+   */
+  if (soChecklist) {
+    return (
+      <Shell>
+        <Routes>
+          <Route path={CAMINHO_CHECKLIST} element={<FbChecklist />} />
+          <Route path="/conta" element={<Conta />} />
+          <Route path="*" element={<Navigate to={CAMINHO_CHECKLIST} replace />} />
+        </Routes>
+      </Shell>
+    )
+  }
+
   // A entrada é o ecrã de escolher departamento: não leva o Shell, que é
   // precisamente o que ela existe para configurar.
   if (pathname === '/entrada') return <Entrada />
@@ -139,6 +166,7 @@ function Interior() {
             toda a casa, tirar o SoAdmin daqui e o soAdmin em src/lib/modulos.ts. */}
         <Route path="/horarios" element={<SoAdmin><Horarios /></SoAdmin>} />
         <Route path="/parque" element={<Parque />} />
+        <Route path="/eventos" element={<SalaEventos />} />
         <Route path="/fb" element={<SoFaturacao><FbFaturacao /></SoFaturacao>} />
         <Route path="/fb-checklist" element={<FbChecklist />} />
         <Route path="/fb-painel" element={<SoPainel><FbDashboard /></SoPainel>} />

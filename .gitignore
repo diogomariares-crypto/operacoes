@@ -8,3 +8,8 @@ dist-ssr/
 
 # ferramenta local para fotografar páginas antes de as mandar
 .probe/
+
+# pasta temporaria do teste de acesso no browser
+.render-acesso/
+.render-sala/
+.desenho/

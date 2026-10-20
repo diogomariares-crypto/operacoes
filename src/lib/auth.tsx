@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from '
 import type { Session } from '@supabase/supabase-js'
 import { supabase, sessaoDoLink } from './supabase'
 import type { AppRole, Department } from './types'
+import { CAMINHO_CHECKLIST } from './modulos'
 
 interface AuthState {
   session: Session | null
@@ -33,11 +34,20 @@ interface AuthState {
    * permissão.
    */
   podeVerFaturacao: boolean
+  /**
+   * Esta conta entra na app só para marcar a checklist da manhã.
+   *
+   * É o acesso mais pequeno que existe: uma página, e mais nada. Quem o tem
+   * não vê o Início, o stock, os grupos, o parque, o turno nem a faturação —
+   * e a base de dados recusa-lhe essas tabelas, não é só o menu a esconder.
+   */
+  soChecklist: boolean
   /** Este módulo aparece a esta conta? */
   podeVerModulo: (m: { soAdmin?: boolean; soRh?: boolean; soLav?: boolean
                        soHk?: boolean; soCaixa?: boolean }) => boolean
   /** Esta página aparece a esta conta? */
-  podeVerPagina: (p: { soAdmin?: boolean; soPainel?: boolean; soPa?: boolean; soRh?: boolean
+  podeVerPagina: (p: { to?: string
+                       soAdmin?: boolean; soPainel?: boolean; soPa?: boolean; soRh?: boolean
                        soLav?: boolean; soHk?: boolean; soCaixa?: boolean
                        soEscrita?: boolean; soFaturacao?: boolean }) => boolean
   canWrite: (d: Department) => boolean
@@ -115,6 +125,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    * aparecia vazia.
    */
   const podeVerFaturacao = podeVerPainel || roles.includes('fb')
+  /*
+   * O acesso `fb_checklist` entra para fazer uma coisa só. Só conta como tal
+   * quem não tem mais nenhum papel: juntar `fb_checklist` a um supervisor que
+   * já é `fb` não lhe pode tirar o que ele tinha — isso seria um papel que
+   * castiga quem o recebe, e ninguém espera isso de uma permissão.
+   */
+  const soChecklist = roles.length > 0 && roles.every(r => r === 'fb_checklist')
   const canWrite = (d: Department) =>
     isAdmin ||
     (d === 'FO' && roles.includes('fo')) ||
@@ -136,10 +153,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     (!m.soCaixa || podeVerCaixa)
 
   const podeVerPagina = (p: {
+    to?: string
     soAdmin?: boolean; soPainel?: boolean; soPa?: boolean; soRh?: boolean
     soLav?: boolean; soHk?: boolean; soCaixa?: boolean; soEscrita?: boolean
     soFaturacao?: boolean
   }) =>
+    /*
+     * Para a checklist a regra não é «tirar as páginas que não deve ver»: é
+     * «ver esta, e mais nada». A diferença só aparece no dia em que se
+     * acrescentar a próxima página à app — uma lista de exceções teria de ser
+     * revista, e quem a esquecesse abria-lhe a página sem dar por isso. Isto
+     * não precisa de ser revisto: o que é novo fica de fora.
+     */
+    soChecklist ? p.to === CAMINHO_CHECKLIST :
     (!p.soAdmin || isAdmin) && (!p.soPainel || podeVerPainel) &&
     (!p.soPa || podeVerPa) && (!p.soRh || podeVerRh) &&
     (!p.soLav || podeVerLavandaria) && (!p.soHk || podeVerHk) &&
@@ -164,6 +190,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     podeVerHk,
     podeVerCaixa,
     podeVerFaturacao,
+    soChecklist,
     podeVerModulo,
     podeVerPagina,
     canWrite,

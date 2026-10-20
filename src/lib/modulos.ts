@@ -21,13 +21,35 @@
  *     aparece se a pessoa vir ao menos uma página lá dentro — `temPaginaVisivel`.
  *     Assim o Housekeeping aparece a quem só vê a lavandaria, sem ser preciso
  *     inventar papéis que a casa não tem.
+ *
+ *     Há uma exceção, e é de propósito: o acesso `fb_checklist` não se decide
+ *     por estas marcas, decide-se por uma lista de um caminho só — ver
+ *     `podeVerPagina` em auth.tsx. Os três separadores comuns abaixo são «de
+ *     todos» menos desse, que entra na app para marcar a checklist e sair.
  *  2. Cada página tem **um** dono. Uma página que serve vários departamentos
  *     vive no dono e os outros chegam lá por atalho, em vez de aparecer
  *     repetida em três sítios — que é como se perde a noção de onde se estava.
  *
+ *     Duas páginas estão em dois departamentos, e as duas pela mesma razão: há
+ *     quem marque e há quem execute. O parque — a receção estaciona, a
+ *     manutenção conserta. A sala de eventos — a receção atende o telefone, o
+ *     F&B monta a sala e serve. Em ambos os casos é a MESMA página em dois
+ *     sítios, e não duas; o `moduloDoCaminho` dá a barra ao primeiro da lista
+ *     para não acender dois separadores de uma vez.
+ *
  * Para acrescentar uma página: criá-la em src/pages/, registar a rota em
  * src/App.tsx e pô-la no departamento certo aqui.
  */
+/**
+ * A única página que o acesso `fb_checklist` vê.
+ *
+ * Está aqui, e não escrita à mão em três sítios, porque é ao mesmo tempo o
+ * que o menu mostra (`podeVerPagina`), a única rota que a app monta
+ * (`src/App.tsx`) e o sítio onde qualquer outro endereço vai dar. Se um dia
+ * mudar de caminho, muda nos três de uma vez.
+ */
+export const CAMINHO_CHECKLIST = '/fb-checklist'
+
 export interface Pagina {
   to: string
   label: string
@@ -122,6 +144,9 @@ export const MODULOS: Modulo[] = [
     paginas: [
       { to: '/grupos', label: 'Grupos' },
       { to: '/parque', label: 'Parque' },
+      // A receção atende o telefone de quem quer a sala, por isso é dela a
+      // página. Aparece também no F&B — ver a nota do dono único lá em baixo.
+      { to: '/eventos', label: 'Sala de eventos' },
     ],
   },
   {
@@ -147,6 +172,9 @@ export const MODULOS: Modulo[] = [
       // A checklist da manha e seguida ao telemovel por quem esta de turno, e e
       // a unica coisa do F&B que o acesso `fb_checklist` ve.
       { to: '/fb-checklist', label: 'Checklist' },
+      // Quem monta a sala e serve é o F&B, e precisa de ver o que aí vem sem
+      // ir ao separador da receção. É a mesma página, não uma cópia.
+      { to: '/eventos', label: 'Sala de eventos' },
       { to: '/fb-painel', label: 'Painel', soPainel: true },
       { to: '/fb-pa', label: 'Pequenos-almoços', soPa: true },
       { to: '/fb-importar', label: 'Importar Valentinas', soAdmin: true },

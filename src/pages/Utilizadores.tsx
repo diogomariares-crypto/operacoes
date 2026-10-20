@@ -22,7 +22,8 @@ const TODOS: { role: AppRole; label: string; desc: string }[] = [
   // O acesso mais pequeno da casa, e fica em ultimo de proposito: quem percorre
   // a lista de cima para baixo encontra primeiro os papeis de departamento.
   { role: 'fb_checklist', label: 'F&B — só checklist',
-    desc: 'a checklist da manhã do restaurante, sem faturação nem painel' },
+    desc: 'uma página e mais nada: a checklist da manhã. Sem Início, turno, '
+        + 'stock, grupos nem faturação. Só conta se for o único papel' },
 ]
 
 export default function Utilizadores() {

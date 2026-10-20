@@ -1,8 +1,16 @@
 export type Department = 'FO' | 'HSK' | 'FB'
 /**
  * `fb_checklist` é o acesso mais pequeno que existe: a checklist da manhã do
- * F&B e os separadores comuns, sem faturação nem painel. Não dá escrita em
- * departamento nenhum — ver canWrite em auth.tsx.
+ * F&B e mais nada — sem Início, sem turno, sem stock, sem grupos, sem parque,
+ * sem faturação. Não dá escrita em departamento nenhum (ver canWrite em
+ * auth.tsx) nem permite editar a própria lista de tarefas, só marcá-la.
+ *
+ * Só vale como acesso pequeno quando é o único papel da conta: somá-lo a um
+ * supervisor que já é `fb` não lhe tira nada — ver `soChecklist` em auth.tsx.
+ *
+ * E não é só o menu: a base de dados recusa-lhe as tabelas das outras páginas,
+ * porque `has_any_role()` deixa de ser verdade para esta conta. Quem mexer
+ * nesse papel tem de mexer nas duas pontas, ou a app esconde o que a API dá.
  */
 export type AppRole =
   'admin' | 'fo' | 'hsk' | 'fb' | 'financeiro' | 'rh' | 'fb_checklist'

@@ -1,0 +1,120 @@
+-- Sala de eventos — o que está na base de dados, e porquê.
+--
+-- As tabelas, as políticas e a função já foram aplicadas (migrações
+-- `sala_eventos_tabelas` e `sala_eventos_politicas`). Este ficheiro fica no
+-- repositório porque o que manda nesta página não é o ecrã: é a restrição de
+-- exclusão aqui em baixo. Quem mexer numa tem de olhar para a outra.
+--
+-- ===========================================================================
+-- A CORRER NO SQL EDITOR: limpar as linhas do meu teste
+-- ===========================================================================
+--
+-- Para provar as restrições criei um espaço `__teste__` no Gravity com quatro
+-- reservas. Já provaram o que tinham a provar, mas não as consegui apagar: o
+-- tool por onde falo com a base de dados fica à espera de uma confirmação que
+-- não chega, e `delete` nunca corre. São linhas minhas, de hoje, e não dados
+-- da casa — mas enquanto cá estiverem aparecem na página como uma sala a sério.
+--
+-- Correr isto, de preferência antes de abrires a página:
+--
+--   delete from public.event_bookings
+--   where space_id in (select id from public.event_spaces where nome = '__teste__');
+--
+--   delete from public.event_spaces where nome = '__teste__';
+--
+-- Depois disso a página diz «não há nenhum espaço configurado» e dá-te um botão
+-- para criares a sala a sério, onde lhe pões o nome, a lotação e as horas.
+--
+-- ===========================================================================
+-- O QUE ESTÁ FEITO, E O PORQUÊ
+-- ===========================================================================
+--
+-- create table public.event_spaces (
+--   id uuid primary key default gen_random_uuid(),
+--   hotel_id uuid not null references public.hotels(id),
+--   nome text not null,
+--   capacidade int,
+--   abre  time not null default '08:00',
+--   fecha time not null default '01:00',
+--   ordem int not null default 1,
+--   ativo boolean not null default true,
+--   criado_em timestamptz not null default now()
+-- );
+--
+-- `fecha` menor que `abre` quer dizer que o espaço fecha depois da meia-noite,
+-- e é de propósito que não haja check a proibi-lo. Estas duas horas não são
+-- informação: são a escala vertical da faixa no ecrã — ver `pista()` em
+-- src/lib/eventos.ts.
+--
+-- create table public.event_bookings (
+--   id uuid primary key default gen_random_uuid(),
+--   space_id uuid not null references public.event_spaces(id) on delete restrict,
+--   cliente text not null,
+--   contacto text,
+--   pax int,
+--   estado text not null default 'pedido',
+--   valor numeric(10,2),
+--   necessidades text[] not null default '{}',
+--   notas text,
+--   inicio timestamptz not null,
+--   fim    timestamptz not null,
+--   criado_em timestamptz not null default now(),
+--   atualizado_em timestamptz not null default now(),
+--   atualizado_por text,
+--   constraint eventos_estado_conhecido check (estado in ('pedido','confirmado','cancelado')),
+--   constraint eventos_fim_depois_do_inicio check (fim > inicio),
+--   constraint eventos_sem_sobreposicao exclude using gist (
+--     space_id with =,
+--     tstzrange(inicio, fim) with &&
+--   ) where (estado <> 'cancelado')
+-- );
+--
+-- Três decisões que vale a pena não desfazer sem pensar:
+--
+--  1. **`inicio` e `fim` são instantes**, e não dia mais hora. É o que trata um
+--     jantar das 20:00 à 01:00 sem o partir em duas reservas. Também é o que
+--     acerta nos dois domingos do ano em que o relógio muda: a 25 de Outubro de
+--     2026, das 00:30 às 03:00 são três horas e meia de tempo real e duas e
+--     meia de relógio de parede. Quem escreve as horas é o browser de quem
+--     marca, nunca uma string com `+01` montada à mão.
+--
+--  2. **`on delete restrict` e não cascade.** Apagar um espaço não pode levar
+--     com ele o registo de tudo o que lá se passou — foi a lição das tarefas da
+--     checklist do F&B. Um espaço que deixa de existir põe-se `ativo = false`.
+--
+--  3. **O `where (estado <> 'cancelado')` na restrição.** Sem ele, um evento
+--     cancelado continuava a ocupar a sala e um «não» de Março bloqueava um
+--     «sim» de Abril. Com ele há uma consequência que a página tem de explicar
+--     por palavras: reactivar um cancelado cuja hora já foi dada a outro é
+--     recusado — ver `mensagemDeErro(e, aReactivar)` em src/lib/eventos.ts.
+--
+-- Provado contra a base de dados a sério, e não por raciocínio:
+--   . uma reserva por cima de outra é recusada (23P01)
+--   . duas encostadas — o fim de uma é o início da outra — são aceites
+--   . marcar por cima de um cancelado é aceite
+--   . reactivar um cancelado cuja hora foi tomada é recusado
+--   . fim antes do início é recusado (23514)
+--   . um estado inventado é recusado (23514)
+--
+-- ===========================================================================
+-- QUEM VÊ E QUEM ESCREVE
+-- ===========================================================================
+--
+-- create or replace function public.pode_marcar_eventos() ... as $$
+--   select public.can_write_dept('FO'::department)
+--       or public.can_write_dept('FB'::department);
+-- $$;
+--
+-- A receção atende o telefone de quem quer a sala; o F&B monta-a e serve. O
+-- `can_write_dept` já traz o MFA e o admin lá dentro, por isso esta função é
+-- uma linha e não repete nenhuma regra.
+--
+--   event_spaces   select  -> has_any_role()            (toda a casa vê)
+--   event_spaces   all     -> is_admin()                (nome, lotação e horas)
+--   event_bookings select  -> has_any_role()
+--   event_bookings all     -> pode_marcar_eventos()
+--
+-- O acesso `fb_checklist` fica de fora das duas leituras, porque não passa no
+-- `has_any_role()` depois de sql/acesso-checklist.sql — e está verificado em
+-- scripts/testar-acesso-no-browser.mjs, que escreve `#/eventos` à mão e
+-- confirma que vai dar à checklist.

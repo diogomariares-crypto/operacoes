@@ -1,13 +1,13 @@
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
 import { useApp } from '../lib/appState'
-import { moduloDoCaminho, temPaginaVisivel } from '../lib/modulos'
+import { moduloDoCaminho, temPaginaVisivel, type Modulo } from '../lib/modulos'
 import { deptGuardado, esquecerDept, modulosDoDept } from '../lib/departamentos'
 import type { ReactNode } from 'react'
 import { useEffect, useRef, useState } from 'react'
 
 export default function Shell({ children }: { children: ReactNode }) {
-  const { podeVerPagina, email, fullName, roles, signOut } = useAuth()
+  const { podeVerPagina, soChecklist, email, fullName, roles, signOut } = useAuth()
   const { hotels, hotelId, setHotelId } = useApp()
   const nav = useNavigate()
   const { pathname } = useLocation()
@@ -42,6 +42,17 @@ export default function Shell({ children }: { children: ReactNode }) {
 
   const paginas = ativo.paginas.filter(podeVerPagina)
 
+  /*
+   * Clicar no separador leva à primeira página QUE A PESSOA VÊ, e não à
+   * primeira da lista.
+   *
+   * O F&B começa no «Dia», que é faturação. Quem não a pode ver clicava no
+   * separador do seu próprio departamento e era devolvido ao Início — parecia
+   * que o separador estava avariado, quando o que estava errado era o destino.
+   */
+  const primeiraVisivel = (m: Modulo) =>
+    (m.paginas.find(podeVerPagina) ?? m.paginas[0]).to
+
   // Quando várias páginas correspondem (ex.: /turno e /turno/2026-08-24),
   // só a mais específica fica destacada.
   const bate = (to: string) =>
@@ -62,25 +73,41 @@ export default function Shell({ children }: { children: ReactNode }) {
             moldura e o nome do departamento à vista, e há o mesmo caminho pelo
             menu da conta para quem procura lá.
           */}
-          <button
-            onClick={() => { esquecerDept(); nav('/entrada') }}
-            title="Trocar de departamento"
-            className="flex shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 py-1 pl-1 pr-2 hover:border-brand-200 hover:bg-brand-50/60"
-          >
-            <span className="text-base leading-none text-slate-400">‹</span>
-            <span className="grid h-8 w-8 place-items-center rounded-lg bg-brand-500 text-sm font-bold text-white">
-              cb
-            </span>
-            <span className="max-w-[28vw] truncate text-sm font-semibold sm:max-w-none">
-              {dept ? dept.label : 'Departamentos'}
-            </span>
-          </button>
+          {/* Quem só tem a checklist não tem departamentos por onde escolher: o
+              botão levava a um ecrã que lhe aparecia vazio e devolvia-o para
+              aqui. Fica a marca, sem seta e sem convite. */}
+          {soChecklist ? (
+            <div className="flex shrink-0 items-center gap-1.5 py-1 pr-2">
+              <span className="grid h-8 w-8 place-items-center rounded-lg bg-brand-500 text-sm font-bold text-white">
+                cb
+              </span>
+              <span className="truncate text-sm font-semibold">F&amp;B</span>
+            </div>
+          ) : (
+            <button
+              onClick={() => { esquecerDept(); nav('/entrada') }}
+              title="Trocar de departamento"
+              className="flex shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 py-1 pl-1 pr-2 hover:border-brand-200 hover:bg-brand-50/60"
+            >
+              <span className="text-base leading-none text-slate-400">‹</span>
+              <span className="grid h-8 w-8 place-items-center rounded-lg bg-brand-500 text-sm font-bold text-white">
+                cb
+              </span>
+              <span className="max-w-[28vw] truncate text-sm font-semibold sm:max-w-none">
+                {dept ? dept.label : 'Departamentos'}
+              </span>
+            </button>
+          )}
 
           {/* O nome do hotel na cor do hotel. É o segundo sinal, para quem olha
               para o seletor em vez de olhar para a faixa — e o que faz a troca
-              de hotel parecer ter acontecido de facto. */}
+              de hotel parecer ter acontecido de facto.
+
+              34vw e nao 42 no telemovel: a 390px, o seletor a 42vw mais a marca
+              mais a conta davam 405px de conteudo num ecra de 390, e a app
+              inteira deslizava 15px para o lado — em todas as paginas. */}
           <select
-            className="input h-9 w-auto max-w-[42vw] py-1 text-sm font-semibold text-hotel-700"
+            className="input h-9 w-auto max-w-[34vw] py-1 text-sm font-semibold text-hotel-700 sm:max-w-[42vw]"
             value={hotelId ?? ''}
             onChange={e => setHotelId(e.target.value)}
           >
@@ -91,13 +118,14 @@ export default function Shell({ children }: { children: ReactNode }) {
           {/* Dez separadores: sem os icones cabem todos ate aos 1024px, e abaixo
               disso a barra desliza em vez de empurrar o hotel e a conta para fora.
               Os icones continuam a servir os cartoes da entrada. */}
+          {!soChecklist && (
           <nav className="ml-auto hidden min-w-0 items-center gap-0.5 overflow-x-auto rounded-xl bg-slate-100 p-1 md:flex">
             {modulos.map(m => {
               const sel = m.id === ativo.id
               return (
                 <button
                   key={m.id}
-                  onClick={() => nav(m.paginas[0].to)}
+                  onClick={() => nav(primeiraVisivel(m))}
                   className={`shrink-0 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium transition ${
                     sel ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'
                   }`}
@@ -107,8 +135,9 @@ export default function Shell({ children }: { children: ReactNode }) {
               )
             })}
           </nav>
+          )}
 
-          <div className="relative ml-auto md:ml-0">
+          <div className={`relative ml-auto ${soChecklist ? '' : 'md:ml-0'}`}>
             <button
               onClick={() => setMenu(m => !m)}
               className="grid h-9 w-9 place-items-center rounded-full bg-slate-100 text-sm font-semibold text-slate-700"
@@ -133,13 +162,15 @@ export default function Shell({ children }: { children: ReactNode }) {
                     </div>
                   </div>
                   <div className="my-1 border-t border-slate-100" />
-                  <button
-                    onClick={() => { setMenu(false); esquecerDept(); nav('/entrada') }}
-                    className="block w-full rounded-lg px-2 py-1.5 text-left text-sm text-slate-700 hover:bg-slate-100"
-                  >
-                    Trocar de departamento
-                    {dept && <span className="text-slate-400"> · {dept.label}</span>}
-                  </button>
+                  {!soChecklist && (
+                    <button
+                      onClick={() => { setMenu(false); esquecerDept(); nav('/entrada') }}
+                      className="block w-full rounded-lg px-2 py-1.5 text-left text-sm text-slate-700 hover:bg-slate-100"
+                    >
+                      Trocar de departamento
+                      {dept && <span className="text-slate-400"> · {dept.label}</span>}
+                    </button>
+                  )}
                   <button
                     onClick={() => { setMenu(false); nav('/conta') }}
                     className="block w-full rounded-lg px-2 py-1.5 text-left text-sm text-slate-700 hover:bg-slate-100"
@@ -193,16 +224,20 @@ export default function Shell({ children }: { children: ReactNode }) {
         <div className="h-1 bg-hotel-500" aria-hidden="true" />
       </header>
 
-      <main className="mx-auto max-w-7xl px-3 py-4 pb-24 sm:px-5 sm:py-6">{children}</main>
+      <main className={`mx-auto max-w-7xl px-3 py-4 sm:px-5 sm:py-6 ${
+        soChecklist ? 'pb-8' : 'pb-24'}`}>{children}</main>
 
-      {/* telemóvel: os módulos em baixo */}
+      {/* telemóvel: os módulos em baixo. Com um módulo e uma página, a barra
+          era uma linha a dizer onde já se está — e tirava 56px de checklist a
+          um ecrã de telemóvel, que é o único sítio onde esta página se usa. */}
+      {!soChecklist && (
       <nav className="fixed bottom-0 z-30 flex w-full border-t border-slate-200 bg-white md:hidden">
         {modulos.map(m => {
           const sel = m.id === ativo.id
           return (
             <button
               key={m.id}
-              onClick={() => nav(m.paginas[0].to)}
+              onClick={() => nav(primeiraVisivel(m))}
               className={`flex flex-1 flex-col items-center gap-0.5 py-2 text-[11px] font-medium ${
                 sel ? 'text-brand-600' : 'text-slate-500'
               }`}
@@ -213,6 +248,7 @@ export default function Shell({ children }: { children: ReactNode }) {
           )
         })}
       </nav>
+      )}
     </div>
   )
 }
