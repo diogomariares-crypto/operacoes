@@ -19,7 +19,7 @@ const COR_B = '#eb6834'   // ano anterior
  * Um eixo só — as duas séries são sempre da mesma métrica.
  */
 export default function BarrasAno({
-  dados, ano, ant, fmt, altura = 220, magro = false,
+  dados, ano, ant, fmt, altura = 220, magro = false, aoClicar, seleccionado,
 }: {
   dados: Ponto[]
   ano: string
@@ -27,6 +27,13 @@ export default function BarrasAno({
   fmt: (v: number) => string
   altura?: number
   magro?: boolean
+  /**
+   * Torna as barras clicáveis. No telemóvel não há rato, por isso o balão de
+   * passagem não existe: o clique é a única forma de um dedo chegar ao detalhe.
+   */
+  aoClicar?: (p: Ponto, i: number) => void
+  /** Índice da barra escolhida, para se ver qual é que o detalhe está a mostrar. */
+  seleccionado?: number | null
 }) {
   const [tip, setTip] = useState<{ x: number; y: number; p: Ponto } | null>(null)
   const caixa = useRef<HTMLDivElement>(null)
@@ -90,10 +97,18 @@ export default function BarrasAno({
           const mostraRot = magro && dados.length > 20 ? i % 3 === 0 : true
           return (
             <g key={i}
+               className={aoClicar ? 'cursor-pointer' : undefined}
+               onClick={aoClicar ? () => aoClicar(d, i) : undefined}
                onMouseMove={e => {
                  const r = caixa.current?.getBoundingClientRect()
                  setTip({ x: e.clientX - (r?.left ?? 0), y: e.clientY - (r?.top ?? 0), p: d })
                }}>
+              {/* a barra escolhida: um rebordo, e não um preenchimento, para
+                  não se confundir com o sombreado do fim de semana */}
+              {seleccionado === i && (
+                <rect x={cx - passo / 2 + 1} y={mT - 6} width={passo - 2} height={pH + 12}
+                      rx={4} fill="none" stroke="#0f172a" strokeWidth={1.5} opacity={0.55} />
+              )}
               {d.destaque && (
                 <rect x={cx - passo / 2} y={mT - 6} width={passo} height={pH + 12}
                       rx={4} fill="#2a78d6" opacity={0.08} />

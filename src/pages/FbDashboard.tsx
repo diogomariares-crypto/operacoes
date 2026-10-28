@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import { useApp } from '../lib/appState'
 import { Loading, useToast } from '../components/ui'
 import { useLembrado } from '../lib/lembrar'
 import BarrasAno, { Legenda, type Ponto } from '../components/BarrasAno'
 import {
-  type Dash, type Metrica, SERVICOS, METRICAS,
-  fetchDash, linhasPorServico, valor, variacao,
+  type Dash, type Dia, type LinhaServico, type Metrica, SERVICOS, METRICAS,
+  fetchDash, linhasPorServico, serieDoDia, totalDasLinhas, valor, variacao,
   eur, num, pct, seta, corDelta, MESES, MESES3, DIAS_SEMANA, diaDoIso, rotuloPeriodo,
 } from '../lib/fbDash'
 
@@ -24,12 +24,18 @@ export default function FbDashboard() {
     'fb.mes', () => new Date().getMonth() + 1, { doDia: true })
   const [svc, setSvc] = useState('all')
   const [met, setMet] = useState<Metrica>('eur')
+  // O dia que o quadro comparativo está a mostrar. Escolhe-se clicando no
+  // gráfico do dia a dia; muda de mês e deixa de fazer sentido, por isso
+  // limpa-se.
+  const [diaSel, setDiaSel] = useState<string | null>(null)
   const [d, setD] = useState<Dash | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     if (!hotelId) return
     setLoading(true)
+    // o dia escolhido é de outro mês ou de outra casa: deixa de querer dizer nada
+    setDiaSel(null)
     fetchDash(hotelId, ano, mes)
       .then(setD)
       .catch(e => toast((e as Error).message, 'erro'))
@@ -88,7 +94,10 @@ export default function FbDashboard() {
     b: valor(met, s.bEur, s.bPax, svc),
   }))
 
-  const pontosDia: Ponto[] = (d.diario ?? []).map(x => ({
+  // A mesma lista que dá as barras, para o índice do clique bater com o dia.
+  const diasDoMes = d.diario ?? []
+
+  const pontosDia: Ponto[] = diasDoMes.map(x => ({
     rot: String(diaDoIso(x.d)),
     tit: `${DIAS_SEMANA[x.dow - 1]}, ${diaDoIso(x.d)} de ${MESES[(mes ?? 1) - 1]}`,
     subTit: `${DIAS_SEMANA[x.dow - 1]}, ${diaDoIso(x.bData)} ${MESES3[Number(x.bData.slice(5, 7)) - 1]} ${ant}`,
@@ -119,7 +128,9 @@ export default function FbDashboard() {
   return (
     <div className="space-y-4">
       {/* filtros */}
-      <div className="sticky z-20 -mx-4 flex flex-wrap items-center gap-2 border-b border-slate-200 bg-white/95 px-4 py-2 backdrop-blur sm:mx-0 sm:rounded-xl sm:border"
+      {/* -mx-3 e nao -mx-4: o <main> tem px-3 no telemovel, e a margem negativa
+          maior do que ela punha a pagina a deslizar 4px para o lado. */}
+      <div className="sticky z-20 -mx-3 flex flex-wrap items-center gap-2 border-b border-slate-200 bg-white/95 px-3 py-2 backdrop-blur sm:mx-0 sm:rounded-xl sm:border sm:px-4"
            style={{ top: 'var(--cab-h, 57px)' }}>
         <select className="input w-auto" value={ano} onChange={e => setAno(Number(e.target.value))}>
           {anos.map(a => <option key={a} value={a}>{a}</option>)}
@@ -257,7 +268,9 @@ export default function FbDashboard() {
               data. Fim de semana com fundo sombreado.
             </p>
             <Legenda ano={String(ano)} ant={ant} />
-            <BarrasAno dados={pontosDia} ano={String(ano)} ant={ant} fmt={fmt} altura={210} magro />
+            <BarrasAno dados={pontosDia} ano={String(ano)} ant={ant} fmt={fmt} altura={210} magro
+                       seleccionado={diasDoMes.findIndex(x => x.d === diaSel)}
+                       aoClicar={(_, i) => setDiaSel(diasDoMes[i]?.d ?? null)} />
             {pares.length > 0 && (
               <p className="mt-2 text-xs text-slate-500">
                 Nos {pares.length} dias com os dois anos preenchidos:{' '}
@@ -274,6 +287,12 @@ export default function FbDashboard() {
           </>
         )}
       </div>
+
+      {/* o dia escolhido, serviço a serviço */}
+      {mes != null && pontosDia.length > 0 && (
+        <QuadroDoDia dia={diasDoMes.find(x => x.d === diaSel) ?? null}
+                     ano={ano} mes={mes} />
+      )}
 
       {/* sazonalidade semanal */}
       <div className="card p-4">
@@ -351,6 +370,185 @@ function Kpi({ rot, valor: v, a, b, fmt, ant }: {
           </>
         )}
       </div>
+    </div>
+  )
+}
+
+/* ------------------------------------------------------------ o dia escolhido */
+
+/**
+ * Um dia, serviço a serviço, contra o homólogo.
+ *
+ * É o quadro que responde a «como correu ontem, e como tinha corrido no ano
+ * passado?» — a pergunta que os gráficos ao lado não respondem, porque mostram
+ * um serviço de cada vez.
+ *
+ * O homólogo é o **mesmo dia da semana** 52 semanas antes, e não a mesma data
+ * do calendário: num restaurante, comparar uma quarta com uma terça explica
+ * sozinho metade da variação. É a convenção que o resto do painel já usa e a
+ * data exacta está escrita no cabeçalho, para nunca haver dúvida sobre contra
+ * o que se está a comparar.
+ *
+ * As nove colunas não cabem num telemóvel. Em vez de as encolher até não se
+ * lerem, mostra-se uma métrica de cada vez e os três botões escolhem qual; no
+ * computador aparecem as três.
+ */
+function QuadroDoDia({ dia, ano, mes }: { dia: Dia | null; ano: number; mes: number }) {
+  const [metDia, setMetDia] = useState<Metrica>('eur')
+
+  if (!dia) {
+    return (
+      <div className="card border-dashed p-4">
+        <h2 className="text-sm font-semibold">Um dia, serviço a serviço</h2>
+        <p className="mt-1 text-sm text-slate-500">
+          Clica num dia no gráfico aqui em cima para ver a faturação, os covers e o
+          preço médio desse dia em todos os serviços, contra o mesmo dia da semana
+          do ano passado.
+        </p>
+      </div>
+    )
+  }
+
+  const semHomologo = dia.bEur == null
+  const semEsteAno = dia.aEur == null
+
+  const dA = `${diaDoIso(dia.d)} de ${MESES[mes - 1]} de ${ano}`
+  const dB = `${DIAS_SEMANA[dia.dow - 1].toLowerCase()}, ${diaDoIso(dia.bData)} de ` +
+             `${MESES[Number(dia.bData.slice(5, 7)) - 1]} de ${dia.bData.slice(0, 4)}`
+
+  /*
+   * Um dia que ainda não aconteceu — ou que ainda não foi lançado — tem o
+   * homólogo preenchido e este ano vazio. Mostrar a tabela aqui dava uma coluna
+   * de zeros e sete variações de −100%: não é uma quebra, é um dia que ainda
+   * não existe, e a diferença entre as duas coisas é tudo.
+   */
+  if (semEsteAno) {
+    const h = totalDasLinhas(linhasPorServico(
+      { aEur: [], aPax: [], bEur: dia.bEur ?? [], bPax: dia.bPax ?? [] }, 'servico'))
+    return (
+      <div className="card p-4">
+        <h2 className="text-sm font-semibold">{DIAS_SEMANA[dia.dow - 1]}, {dA}</h2>
+        <p className="mt-1 text-sm text-slate-500">
+          Ainda não há faturação lançada neste dia.
+          {h.bEur != null && (
+            <> No homólogo — {dB} — fizeram-se <strong>{eur(h.bEur)}</strong> com{' '}
+            {num(h.bPax)} covers, a {eur(h.bTm ?? 0, 2)} cada.</>
+          )}
+        </p>
+      </div>
+    )
+  }
+
+  const linhas = linhasPorServico(serieDoDia(dia), 'servico')
+  const total = totalDasLinhas(linhas)
+
+  // No telemóvel só se vê a métrica escolhida; no computador vêem-se as três.
+  const grupo = (m: Metrica) => metDia === m ? '' : 'hidden sm:table-cell'
+
+  const celulas = (l: LinhaServico) => {
+    const vazia = l.aEur === 0 && l.aPax === 0 && (l.bEur ?? 0) === 0 && (l.bPax ?? 0) === 0
+    const c = vazia ? 'text-slate-300' : 'text-slate-700'
+    return (
+      <>
+        <td className={`td text-right tabular-nums ${c} ${grupo('eur')}`}>{eur(l.aEur)}</td>
+        <td className={`td text-right tabular-nums text-slate-500 ${grupo('eur')}`}>
+          {l.bEur == null ? '—' : eur(l.bEur)}
+        </td>
+        <td className={`td text-right tabular-nums ${corDelta(l.pEur)} ${grupo('eur')}`}>
+          {pct(l.pEur)}
+        </td>
+
+        <td className={`td text-right tabular-nums ${c} ${grupo('pax')}`}>{num(l.aPax)}</td>
+        <td className={`td text-right tabular-nums text-slate-500 ${grupo('pax')}`}>
+          {l.bPax == null ? '—' : num(l.bPax)}
+        </td>
+        <td className={`td text-right tabular-nums ${corDelta(l.pPax)} ${grupo('pax')}`}>
+          {pct(l.pPax)}
+        </td>
+
+        <td className={`td text-right tabular-nums ${c} ${grupo('tm')}`}>
+          {l.aTm == null ? '—' : eur(l.aTm, 2)}
+        </td>
+        <td className={`td text-right tabular-nums text-slate-500 ${grupo('tm')}`}>
+          {l.bTm == null ? '—' : eur(l.bTm, 2)}
+        </td>
+        <td className={`td text-right tabular-nums ${corDelta(l.pTm)} ${grupo('tm')}`}>
+          {pct(l.pTm)}
+        </td>
+      </>
+    )
+  }
+
+  return (
+    <div className="card overflow-hidden">
+      <div className="flex flex-wrap items-baseline justify-between gap-2 px-4 pt-4">
+        <div>
+          <h2 className="text-sm font-semibold">
+            {DIAS_SEMANA[dia.dow - 1]}, {dA}
+          </h2>
+          <p className="mt-0.5 text-xs text-slate-500">
+            contra {dB} — o mesmo dia da semana, 52 semanas antes
+          </p>
+        </div>
+        {/* só no telemóvel: no computador as três métricas estão todas à vista */}
+        <div className="flex gap-1 sm:hidden">
+          {(Object.keys(METRICAS) as Metrica[]).map(m => (
+            <button key={m} onClick={() => setMetDia(m)}
+                    className={`rounded-lg px-2.5 py-1 text-xs font-medium ${
+                      metDia === m ? 'bg-brand-500 text-white' : 'bg-slate-100 text-slate-600'}`}>
+              {METRICAS[m].rot}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {semHomologo && (
+        <p className="mx-4 mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          Não há registo de {dB}. Esta casa ainda não tem um ano inteiro de
+          faturação lançada, por isso as variações ficam por calcular.
+        </p>
+      )}
+
+      <div className="mt-3 overflow-x-auto">
+        <table className="w-full border-collapse text-sm">
+          <thead>
+            {/* a linha dos grupos não cabe no telemóvel, onde há uma métrica só */}
+            <tr className="hidden border-b border-slate-100 sm:table-row">
+              <th className="th" />
+              <th className="th !text-center" colSpan={3}>Faturação</th>
+              <th className="th !text-center" colSpan={3}>Covers</th>
+              <th className="th !text-center" colSpan={3}>Preço médio</th>
+            </tr>
+            <tr className="border-b border-slate-200">
+              <th className="th">Serviço</th>
+              {(['eur', 'pax', 'tm'] as Metrica[]).map(m => (
+                <Fragment key={m}>
+                  <th className={`th !text-right ${grupo(m)}`}>{ano}</th>
+                  <th className={`th !text-right ${grupo(m)}`}>{ano - 1}</th>
+                  <th className={`th !text-right ${grupo(m)}`}>Var.</th>
+                </Fragment>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {linhas.map(l => (
+              <tr key={l.k} className="border-b border-slate-50">
+                <td className="td whitespace-nowrap font-medium">{l.rot}</td>
+                {celulas(l)}
+              </tr>
+            ))}
+            <tr className="border-t-2 border-slate-200 bg-slate-50 font-semibold">
+              <td className="td whitespace-nowrap">{total.rot}</td>
+              {celulas(total)}
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p className="px-4 py-3 text-xs text-slate-400">
+        O preço médio do total é a faturação toda a dividir pelos covers todos — e
+        não a média dos preços médios de cada serviço.
+      </p>
     </div>
   )
 }

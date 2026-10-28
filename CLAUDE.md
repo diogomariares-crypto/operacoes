@@ -40,6 +40,8 @@ Os testes vivem em `scripts/` e correm-se com `node`:
 | `testar-acesso-checklist.mjs` | o acesso `fb_checklist` vê uma página só | `node …` |
 | `testar-acesso-no-browser.mjs` | o mesmo, mas a sério num browser | `node …` |
 | `testar-sala-no-browser.mjs` | a sala de eventos desenha bem, e fotografa-a | `node …` |
+| `testar-fb-dia.mjs` | o quadro do dia no painel de F&B, com dois dias reais do Gravity | `node …` |
+| `testar-fb-no-browser.mjs` | o mesmo quadro desenhado, e fotografa-o | `node …` |
 
 Os dois últimos montam a app com um Supabase falso e abrem-na no Chromium via
 Playwright. Se o browser não for encontrado, passa o caminho em `CHROMIUM=`.

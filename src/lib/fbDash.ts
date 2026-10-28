@@ -67,8 +67,21 @@ export const eur = (v: number | null, casas = 0) =>
 export const num = (v: number | null) =>
   v == null ? '—' : Math.round(v).toLocaleString('pt-PT')
 
-export const pct = (v: number | null) =>
-  v == null ? '—' : (v > 0 ? '+' : '−') + Math.abs(v).toFixed(1).replace('.', ',') + '%'
+/**
+ * Uma variação em percentagem.
+ *
+ * Zero não leva sinal: 120 covers contra 120 covers é «0,0%», e não «−0,0%».
+ * O sinal de menos num valor que não desceu lê-se como uma quebra pequena, e
+ * numa tabela de um dia aparecia em todas as linhas que não mudaram. É a mesma
+ * regra que o `pessoasTexto` do housekeeping já segue.
+ */
+export const pct = (v: number | null) => {
+  if (v == null) return '—'
+  // o sinal sai do valor ARREDONDADO, que é o que se vai ler: senão uma
+  // subida de 0,004% escrevia-se «+0,0%», e o sinal discordava do número
+  const r = Math.round(v * 10) / 10
+  return (r > 0 ? '+' : r < 0 ? '−' : '') + Math.abs(r).toFixed(1).replace('.', ',') + '%'
+}
 
 export const seta = (v: number | null) => v == null ? '' : v > 0 ? '▲' : v < 0 ? '▼' : '–'
 export const corDelta = (v: number | null) =>
@@ -120,8 +133,22 @@ export interface LinhaServico {
   aTm: number | null; bTm: number | null; pTm: number | null
 }
 
-export function linhasPorServico(s: Serie): LinhaServico[] {
-  return SERVICOS.map((sv, i) => {
+/**
+ * Uma linha por serviço, com os dois anos e as variações.
+ *
+ * `ordem` escolhe entre duas leituras diferentes, e não é um pormenor:
+ *
+ *  - `'pior'` (o que o painel do período usa) põe à cabeça o serviço que mais
+ *    peso perdeu. É a leitura de quem pergunta «o que é que correu mal?».
+ *  - `'servico'` mantém a ordem do dia — pequeno-almoço, almoço, jantar, bar.
+ *    É a leitura de quem percorre um dia de serviço em serviço, e numa tabela
+ *    de um dia só é essa que se quer: a ordem a mudar conforme o dia tornava
+ *    impossível comparar dois dias a seguir um ao outro.
+ */
+export function linhasPorServico(
+  s: Serie, ordem: 'pior' | 'servico' = 'pior',
+): LinhaServico[] {
+  const linhas = SERVICOS.map((sv, i) => {
     const aEur = s.aEur?.[i] ?? 0, bEur = s.bEur?.[i] ?? null
     const aPax = s.aPax?.[i] ?? 0, bPax = s.bPax?.[i] ?? null
     const aTm = aPax ? aEur / aPax : null
@@ -132,5 +159,43 @@ export function linhasPorServico(s: Serie): LinhaServico[] {
       aPax, bPax, pPax: variacao(aPax, bPax),
       aTm, bTm, pTm: variacao(aTm, bTm),
     }
-  }).sort((x, y) => (x.dEur ?? 0) - (y.dEur ?? 0))
+  })
+  return ordem === 'servico'
+    ? linhas
+    : linhas.sort((x, y) => (x.dEur ?? 0) - (y.dEur ?? 0))
 }
+
+/**
+ * O total de um dia, somando todos os serviços.
+ *
+ * O preço médio do total **não** é a média dos preços médios: é a faturação
+ * toda a dividir pelos covers todos. Um pequeno-almoço de 8 € e um jantar de
+ * 40 € não dão 24 € de ticket médio quando serviram 90 e 12 pessoas.
+ */
+export function totalDasLinhas(linhas: LinhaServico[]): LinhaServico {
+  const soma = (f: (l: LinhaServico) => number | null) =>
+    linhas.reduce<number | null>((acc, l) => {
+      const v = f(l)
+      return v == null ? acc : (acc ?? 0) + v
+    }, null)
+
+  const aEur = soma(l => l.aEur) ?? 0
+  const bEur = soma(l => l.bEur)
+  const aPax = soma(l => l.aPax) ?? 0
+  const bPax = soma(l => l.bPax)
+  const aTm = aPax ? aEur / aPax : null
+  const bTm = bPax ? (bEur ?? 0) / bPax : null
+  return {
+    k: 'all', rot: 'Total',
+    aEur, bEur, dEur: bEur == null ? null : aEur - bEur, pEur: variacao(aEur, bEur),
+    aPax, bPax, pPax: variacao(aPax, bPax),
+    aTm, bTm, pTm: variacao(aTm, bTm),
+  }
+}
+
+/** Um dia do array `diario` na forma que o `linhasPorServico` come. */
+export const serieDoDia = (d: Dia): Serie => ({
+  aEur: d.aEur ?? [], aPax: d.aPax ?? [],
+  bEur: d.bEur ?? [], bPax: d.bPax ?? [],
+})
+
