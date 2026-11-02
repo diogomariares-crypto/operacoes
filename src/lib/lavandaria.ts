@@ -255,3 +255,127 @@ export async function ocupacaoDoPeriodo(
     suspeitos,
   }
 }
+
+/* --------------------------------------------------------- o catálogo */
+
+/**
+ * O catálogo de peças é uma lista de nomes escritos à mão, e **as linhas das
+ * faturas ligam-se a ele só pelo texto** — não há chave estrangeira nenhuma.
+ *
+ * É por isso que já lá estão «Fronha Classica branca 46x71» e «Fronha Clássica
+ * branca 46x71» como duas peças diferentes, cada uma com o seu histórico: uma
+ * entrou escrita de uma maneira e a outra de outra, e nada as impediu.
+ *
+ * Daí estas funções existirem em vez de um `update` qualquer:
+ *
+ *  - antes de acrescentar, `parecidoCom` avisa que já existe uma peça igual
+ *    escrita de outra maneira;
+ *  - mudar o nome **reescreve também as linhas**, senão o histórico ficava
+ *    órfão: as linhas antigas apontariam para um nome que já não existe, e
+ *    passariam a contar como «alojamento» por omissão, sem erro nenhum.
+ */
+
+/** Sem acentos, sem maiúsculas, sem espaços a mais. Para comparar nomes. */
+export const normalizarNome = (s: string) =>
+  s.normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .toLowerCase().replace(/\s+/g, ' ').trim()
+
+/**
+ * A peça do catálogo que é «a mesma» que este nome, escrita de outra maneira.
+ * Devolve null quando não há nenhuma, e ignora a própria.
+ */
+export function parecidoCom(nome: string, artigos: Artigo[], excepto?: string): string | null {
+  const n = normalizarNome(nome)
+  if (!n) return null
+  const bate = artigos.find(a => a.nome !== excepto && normalizarNome(a.nome) === n)
+  return bate?.nome ?? null
+}
+
+export async function criarArtigo(a: Artigo) {
+  const { error } = await supabase.from('lav_artigos').insert(a)
+  if (error) {
+    if (error.code === '23505') throw new Error(`Já existe uma peça chamada «${a.nome}».`)
+    throw error
+  }
+}
+
+/** Muda a secção ou o «conta por quarto». O nome muda-se com `renomearArtigo`. */
+export async function guardarArtigo(
+  nome: string, patch: Partial<Pick<Artigo, 'seccao' | 'conta_para_quarto'>>,
+) {
+  const { error } = await supabase.from('lav_artigos').update(patch).eq('nome', nome)
+  if (error) throw error
+}
+
+/** Quantas linhas de fatura usam esta peça. Zero = dá para apagar sem perder nada. */
+export async function usosDoArtigo(nome: string): Promise<number> {
+  const { count, error } = await supabase
+    .from('lav_linhas').select('id', { count: 'exact', head: true }).eq('artigo', nome)
+  if (error) throw error
+  return count ?? 0
+}
+
+/**
+ * Muda o nome de uma peça, **e o das linhas que lhe apontam**.
+ *
+ * Se o nome novo já existir, isto é uma junção: as linhas das duas passam a ter
+ * o mesmo nome e a peça antiga desaparece do catálogo. É o que resolve os
+ * duplicados que lá estão — mas apaga uma linha do catálogo, por isso quem
+ * chama tem de perguntar primeiro.
+ *
+ * As linhas primeiro, o catálogo depois: se falhar a meio, ficam linhas com o
+ * nome novo e as duas peças no catálogo — feio, mas sem nada perdido. Pela
+ * ordem contrária ficariam linhas órfãs.
+ */
+export async function renomearArtigo(a: Artigo, para: string, juntar: boolean) {
+  const de = a.nome
+  const novo = para.trim()
+  if (!novo) throw new Error('O nome não pode ficar vazio.')
+  if (novo === de) return
+
+  if (!juntar) {
+    // a secção e o «conta por quarto» vão com ela: nascer com os valores por
+    // omissão fazia uma peça de restauração passar a alojamento ao mudar-lhe
+    // uma letra do nome, e isso reescrevia o €/quarto do histórico todo
+    const { error } = await supabase.from('lav_artigos')
+      .insert({ nome: novo, seccao: a.seccao, conta_para_quarto: a.conta_para_quarto })
+    if (error && error.code !== '23505') throw error
+  }
+
+  const { error: eL } = await supabase
+    .from('lav_linhas').update({ artigo: novo }).eq('artigo', de)
+  if (eL) throw eL
+
+  const { error: eA } = await supabase.from('lav_artigos').delete().eq('nome', de)
+  if (eA) throw eA
+}
+
+export async function apagarArtigo(nome: string) {
+  const { error } = await supabase.from('lav_artigos').delete().eq('nome', nome)
+  if (error) throw error
+}
+
+/* ------------------------------------------------- linhas em edição */
+
+/** Uma linha de fatura enquanto se escreve, antes de ter id. */
+export type LinhaEdit = { artigo: string; quantidade: number; valor: number }
+
+/** O que impede de gravar. Null quando está tudo bem. */
+export function problemaDasLinhas(ls: LinhaEdit[]): string | null {
+  const usadas = ls.filter(l => l.artigo.trim() || l.quantidade || l.valor)
+  if (usadas.some(l => !l.artigo.trim())) {
+    return 'Há uma linha com peças ou valor e sem nome.'
+  }
+  const nomes = usadas.map(l => l.artigo.trim())
+  const repetido = nomes.find((n, i) => nomes.indexOf(n) !== i)
+  if (repetido) return `A peça «${repetido}» aparece duas vezes na mesma fatura.`
+  if (usadas.some(l => !Number.isFinite(l.quantidade) || !Number.isFinite(l.valor))) {
+    return 'Há um número que não se entende.'
+  }
+  return null
+}
+
+/** Só as linhas que valem a pena gravar, com os nomes já aparados. */
+export const linhasAGravar = (ls: LinhaEdit[]) => ls
+  .map(l => ({ ...l, artigo: l.artigo.trim() }))
+  .filter(l => l.artigo && (l.quantidade !== 0 || l.valor !== 0))

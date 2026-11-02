@@ -162,6 +162,11 @@ ok('fo entra nos grupos', await onde(['fo'], '/grupos'), '#/grupos')
 ok('fo entra na sala de eventos', await onde(['fo'], '/eventos'), '#/eventos')
 ok('fb entra na sala de eventos', await onde(['fb'], '/eventos'), '#/eventos')
 ok('hsk entra na producao do mes', await onde(['hsk'], '/hk-mes'), '#/hk-mes')
+// a lavandaria mudou de separador, mas quem lá entrava continua a entrar
+ok('hsk entra na lavandaria', await onde(['hsk'], '/lavandaria'), '#/lavandaria')
+ok('financeiro continua a entrar na lavandaria',
+  await onde(['financeiro'], '/lavandaria'), '#/lavandaria')
+ok('fo NAO entra na lavandaria', await onde(['fo'], '/lavandaria'), '#/')
 ok('financeiro entra na caixa', await onde(['financeiro'], '/caixa'), '#/caixa')
 ok('rh entra nas pessoas', await onde(['rh'], '/rh'), '#/rh')
 ok('admin entra nos utilizadores', await onde(['admin'], '/utilizadores'), '#/utilizadores')

@@ -155,6 +155,14 @@ export const MODULOS: Modulo[] = [
     icone: '▦',
     paginas: [
       { to: '/hk-mes', label: 'Produção do mês', soHk: true },
+      /*
+       * A lavandaria esteve na Contabilidade, com a justificação de que a
+       * página é de custos e não de operação. Era verdade enquanto só se lia:
+       * agora quem lá escreve é a Governanta — lança as faturas e trata do
+       * catálogo de peças — e uma página mora onde está quem a usa, não onde
+       * está quem lê o número no fim.
+       */
+      { to: '/lavandaria', label: 'Lavandaria', soLav: true },
       { to: '/hk-mapa', label: 'Mapa', soHk: true },
       { to: '/hk-outsourcing', label: 'Outsourcing', soHk: true },
       { to: '/hk-definicoes', label: 'Definições', soAdmin: true },
@@ -198,9 +206,6 @@ export const MODULOS: Modulo[] = [
     icone: '€',
     paginas: [
       { to: '/caixa', label: 'Caixa', soCaixa: true },
-      // A lavandaria está aqui e não no housekeeping porque a página é de
-      // custos, não de operação: quem a abre está a fechar contas.
-      { to: '/lavandaria', label: 'Lavandaria', soLav: true },
     ],
   },
   {

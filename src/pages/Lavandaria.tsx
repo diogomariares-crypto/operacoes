@@ -2,9 +2,11 @@ import { useEffect, useMemo, useState } from 'react'
 import { useApp } from '../lib/appState'
 import { useAuth } from '../lib/auth'
 import {
-  MESES_CURTOS, SECCOES, anoDe, apagarFatura, corSeccao, criarFatura, fetchArtigos,
-  fetchLinhas, fetchPeriodos, garantirArtigos, gravarLinhas, mesDe, ocupacaoDoPeriodo,
-  rotSeccao, semanaISO, somar, variacao,
+  MESES_CURTOS, SECCOES, anoDe, apagarArtigo, linhasAGravar, problemaDasLinhas,
+  type LinhaEdit, apagarFatura, corSeccao, criarArtigo,
+  criarFatura, fetchArtigos, fetchLinhas, fetchPeriodos, garantirArtigos, guardarArtigo,
+  guardarFatura, gravarLinhas, mesDe, ocupacaoDoPeriodo, parecidoCom, renomearArtigo,
+  rotSeccao, semanaISO, somar, usosDoArtigo, variacao,
   type Artigo, type Linha, type Ocupacao, type Periodo, type Seccao,
 } from '../lib/lavandaria'
 import { dmy, money, qty } from '../lib/format'
@@ -32,6 +34,7 @@ export default function Lavandaria() {
   const [mesesComp, setMesesComp] = useState<number[]>([])
   const [detalhe, setDetalhe] = useState<string | null>(null)
   const [nova, setNova] = useState(false)
+  const [catalogo, setCatalogo] = useState(false)
 
   const carregar = () => {
     if (!hotelId) return
@@ -214,9 +217,14 @@ export default function Lavandaria() {
       <div className="card p-4">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <h3 className="text-sm font-semibold text-slate-700">Histórico de períodos</h3>
-          <button className="btn-primary text-sm" onClick={() => setNova(true)}>
-            + Adicionar fatura
-          </button>
+          <div className="flex gap-2">
+            <button className="btn-ghost text-sm" onClick={() => setCatalogo(true)}>
+              Peças
+            </button>
+            <button className="btn-primary text-sm" onClick={() => setNova(true)}>
+              + Adicionar fatura
+            </button>
+          </div>
         </div>
 
         <div className="mt-3 overflow-x-auto">
@@ -286,6 +294,7 @@ export default function Lavandaria() {
             await apagarFatura(detalhe)
             setDetalhe(null); carregar(); toast('Fatura apagada')
           }}
+          onGravado={() => { setDetalhe(null); carregar(); toast('Fatura corrigida') }}
         />
       )}
 
@@ -295,6 +304,11 @@ export default function Lavandaria() {
           onFechar={() => setNova(false)}
           onGravado={() => { setNova(false); carregar(); toast('Fatura registada') }}
         />
+      )}
+
+      {catalogo && (
+        <Catalogo artigos={artigos} onFechar={() => setCatalogo(false)}
+                  onMudou={carregar} />
       )}
     </div>
   )
@@ -481,8 +495,20 @@ function QuartosPorMes({ periodos }: { periodos: Periodo[] }) {
 
 /* ----------------------------------------------------------------- detalhe */
 
+/**
+ * Uma fatura já gravada: ver e corrigir.
+ *
+ * Era só de leitura, e por isso corrigir uma peça obrigava a apagar a fatura
+ * inteira e a lançá-la outra vez — num lançamento de trinta linhas, por causa
+ * de uma.
+ *
+ * Abre fechada, com os números a serem lidos; o botão «Corrigir» é que abre os
+ * campos. Não é cerimónia: estes números reescrevem o €/quarto do período, e
+ * uma tabela de campos editáveis convida a mexer em coisas que só se vieram
+ * consultar.
+ */
 function Detalhe({
-  periodo, linhas, artigos, podeApagar, onFechar, onApagar,
+  periodo, linhas, artigos, podeApagar, onFechar, onApagar, onGravado,
 }: {
   periodo: Periodo
   linhas: Linha[]
@@ -490,9 +516,49 @@ function Detalhe({
   podeApagar: boolean
   onFechar: () => void
   onApagar: () => void
+  onGravado: () => void
 }) {
+  const toast = useToast()
   const cat = Object.fromEntries(artigos.map(a => [a.nome, a]))
   const ordenadas = [...linhas].sort((a, b) => b.valor - a.valor)
+
+  const [aCorrigir, setACorrigir] = useState(false)
+  const [ls, setLs] = useState<LinhaEdit[]>([])
+  const [quartos, setQuartos] = useState(periodo.quartos)
+  const [iva, setIva] = useState(periodo.total_com_iva ?? 0)
+  const [aGravar, setAGravar] = useState(false)
+
+  const abrirCorreccao = () => {
+    setLs(ordenadas.map(l => ({ artigo: l.artigo, quantidade: l.quantidade, valor: l.valor })))
+    setQuartos(periodo.quartos)
+    setIva(periodo.total_com_iva ?? 0)
+    setACorrigir(true)
+  }
+
+  const gravar = async () => {
+    const mau = problemaDasLinhas(ls)
+    if (mau) { toast(mau, 'erro'); return }
+    if (quartos <= 0) { toast('Os quartos ocupados têm de ser mais do que zero', 'erro'); return }
+    setAGravar(true)
+    try {
+      const usadas = linhasAGravar(ls)
+      await garantirArtigos(usadas.map(l => l.artigo))
+      await guardarFatura(periodo.id, {
+        quartos, total_com_iva: iva > 0 ? iva : null,
+      })
+      // as linhas reescrevem-se todas: o `gravarLinhas` apaga e volta a pôr
+      await gravarLinhas(periodo.id, usadas)
+      onGravado()
+    } catch (e) {
+      // de propósito não se fecha nada: o que está no ecrã é o que falta gravar,
+      // e fechar aqui era a única forma de o perder
+      toast((e as Error).message, 'erro')
+      setAGravar(false)
+    }
+  }
+
+  const subtotal = ls.reduce((s, l) => s + l.valor, 0)
+  const pecas = ls.reduce((s, l) => s + l.quantidade, 0)
 
   return (
     <Modal open onClose={onFechar} wide
@@ -506,37 +572,83 @@ function Detalhe({
           : money(periodo.total_com_iva)} />
       </div>
 
-      <table className="mt-4 w-full text-sm">
-        <thead>
-          <tr className="border-b border-slate-200 text-left text-[11px] uppercase tracking-wide text-slate-500">
-            <th className="th">Artigo</th>
-            <th className="th text-right">Peças</th>
-            <th className="th text-right">Valor</th>
-            <th className="th text-right">€/peça</th>
-          </tr>
-        </thead>
-        <tbody>
-          {ordenadas.map(l => (
-            <tr key={l.id} className="border-b border-slate-100">
-              <td className="td">
-                <span className="mr-1.5 inline-block h-2 w-2 rounded-sm align-middle"
-                      style={{ backgroundColor: corSeccao(cat[l.artigo]?.seccao ?? 'alojamento') }} />
-                {l.artigo}
-              </td>
-              <td className="td text-right tabular-nums">{qty(l.quantidade)}</td>
-              <td className="td text-right tabular-nums">{money(l.valor)}</td>
-              <td className="td text-right tabular-nums text-slate-500">
-                {l.quantidade > 0 ? eur2(l.valor / l.quantidade) : '—'}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      {aCorrigir ? (
+        <>
+          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+            <div>
+              <label className="label">Quartos ocupados</label>
+              <NumInput value={quartos} onChange={setQuartos} />
+            </div>
+            <div>
+              <label className="label">Total c/ IVA (opcional)</label>
+              <NumInput value={iva} onChange={setIva} />
+            </div>
+          </div>
 
-      {podeApagar && (
-        <button className="mt-4 text-sm text-red-600 hover:underline" onClick={onApagar}>
-          Apagar esta fatura
-        </button>
+          <TabelaLinhas ls={ls} setLs={setLs} artigos={artigos} />
+
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <div className="text-sm text-slate-600">
+              {qty(pecas)} peças · {money(subtotal)} sem IVA
+              {quartos > 0 && <> · <strong>{eur2(subtotal / quartos)}/quarto</strong></>}
+            </div>
+            <div className="ml-auto flex gap-2">
+              <button className="btn-ghost" disabled={aGravar}
+                      onClick={() => setACorrigir(false)}>Cancelar</button>
+              <button className="btn-primary" disabled={aGravar} onClick={gravar}>
+                {aGravar ? 'A gravar…' : 'Gravar correcção'}
+              </button>
+            </div>
+          </div>
+        </>
+      ) : (
+        <>
+          <table className="mt-4 w-full text-sm">
+            <thead>
+              <tr className="border-b border-slate-200 text-left text-[11px] uppercase tracking-wide text-slate-500">
+                <th className="th">Artigo</th>
+                <th className="th text-right">Peças</th>
+                <th className="th text-right">Valor</th>
+                <th className="th text-right">€/peça</th>
+              </tr>
+            </thead>
+            <tbody>
+              {ordenadas.map(l => (
+                <tr key={l.id} className="border-b border-slate-100">
+                  <td className="td">
+                    <span className="mr-1.5 inline-block h-2 w-2 rounded-sm align-middle"
+                          style={{ backgroundColor: corSeccao(cat[l.artigo]?.seccao ?? 'alojamento') }} />
+                    {l.artigo}
+                    {/* uma peça que ficou sem entrada no catálogo conta como
+                        alojamento por omissão, e isso não se devia adivinhar */}
+                    {!cat[l.artigo] && (
+                      <span className="ml-1.5 text-[11px] text-amber-700">fora do catálogo</span>
+                    )}
+                  </td>
+                  <td className="td text-right tabular-nums">{qty(l.quantidade)}</td>
+                  <td className="td text-right tabular-nums">{money(l.valor)}</td>
+                  <td className="td text-right tabular-nums text-slate-500">
+                    {l.quantidade > 0 ? eur2(l.valor / l.quantidade) : '—'}
+                  </td>
+                </tr>
+              ))}
+              {!ordenadas.length && (
+                <tr><td colSpan={4} className="td py-6 text-center text-slate-400">
+                  Esta fatura não tem peças lançadas.
+                </td></tr>
+              )}
+            </tbody>
+          </table>
+
+          <div className="mt-4 flex items-center gap-4">
+            <button className="btn-primary" onClick={abrirCorreccao}>Corrigir</button>
+            {podeApagar && (
+              <button className="text-sm text-red-600 hover:underline" onClick={onApagar}>
+                Apagar esta fatura
+              </button>
+            )}
+          </div>
+        </>
       )}
     </Modal>
   )
@@ -653,9 +765,11 @@ function NovaFatura({
   const gravar = async () => {
     if (!f.inicio || !f.fim) { toast('Indica o período', 'erro'); return }
     if (f.quartos <= 0) { toast('Indica os quartos ocupados', 'erro'); return }
+    const mau = problemaDasLinhas(ls)
+    if (mau) { toast(mau, 'erro'); return }
     setAGravar(true)
     try {
-      const usadas = ls.filter(l => l.quantidade !== 0 || l.valor !== 0)
+      const usadas = linhasAGravar(ls)
       await garantirArtigos(usadas.map(l => l.artigo))
       const id = await criarFatura({
         hotel_id: hotelId,
@@ -707,34 +821,7 @@ function NovaFatura({
                         if (ocupacao) setF(x => ({ ...x, quartos: ocupacao.quartos })) }}
       />
 
-      <div className="mt-4 max-h-[45vh] overflow-y-auto rounded-lg border border-slate-200">
-        <table className="w-full text-sm">
-          <thead className="sticky top-0 bg-slate-50">
-            <tr className="text-left text-[11px] uppercase tracking-wide text-slate-500">
-              <th className="th">Artigo</th>
-              <th className="th w-28 text-right">Peças</th>
-              <th className="th w-32 text-right">Valor</th>
-            </tr>
-          </thead>
-          <tbody>
-            {ls.map((l, i) => (
-              <tr key={l.artigo} className="border-t border-slate-100">
-                <td className="td">{l.artigo}</td>
-                <td className="td">
-                  <NumInput className="px-2 py-1 text-sm" value={l.quantidade}
-                            onChange={n => setLs(x => x.map((y, k) =>
-                              k === i ? { ...y, quantidade: n } : y))} />
-                </td>
-                <td className="td">
-                  <NumInput className="px-2 py-1 text-sm" value={l.valor}
-                            onChange={n => setLs(x => x.map((y, k) =>
-                              k === i ? { ...y, valor: n } : y))} />
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <TabelaLinhas ls={ls} setLs={setLs} artigos={artigos} />
 
       <div className="mt-3 flex flex-wrap items-end gap-3">
         <div>
@@ -749,6 +836,273 @@ function NovaFatura({
           {aGravar ? 'A gravar…' : 'Gravar fatura'}
         </button>
       </div>
+    </Modal>
+  )
+}
+
+/* ------------------------------------------------------- linhas da fatura */
+
+/**
+ * A tabela de peças de uma fatura, em modo de escrita.
+ *
+ * É a mesma nos dois sítios — ao lançar e ao corrigir — de propósito: eram duas
+ * tabelas parecidas a divergir devagar, e quem corrige uma fatura espera
+ * exactamente o ecrã onde a lançou.
+ *
+ * O nome da peça é um campo livre com sugestões, e não uma lista fechada. Tinha
+ * de ser: a fatura da lavandaria traz peças que ainda não estão no catálogo, e
+ * uma lista fechada obrigava a sair daqui para as acrescentar antes de poder
+ * lançar. Em troca, avisa-se quando o que se escreveu já existe escrito de
+ * outra maneira — é assim que nascem os duplicados.
+ */
+function TabelaLinhas({ ls, setLs, artigos }: {
+  ls: LinhaEdit[]
+  setLs: (f: (x: LinhaEdit[]) => LinhaEdit[]) => void
+  artigos: Artigo[]
+}) {
+  const mudar = (i: number, patch: Partial<LinhaEdit>) =>
+    setLs(x => x.map((y, k) => (k === i ? { ...y, ...patch } : y)))
+
+  return (
+    <>
+      <datalist id="lav-artigos">
+        {artigos.map(a => <option key={a.nome} value={a.nome} />)}
+      </datalist>
+
+      <div className="mt-4 max-h-[45vh] overflow-y-auto rounded-lg border border-slate-200">
+        <table className="w-full text-sm">
+          <thead className="sticky top-0 bg-slate-50">
+            <tr className="text-left text-[11px] uppercase tracking-wide text-slate-500">
+              <th className="th">Artigo</th>
+              <th className="th w-24 text-right">Peças</th>
+              <th className="th w-28 text-right">Valor</th>
+              <th className="th w-8" />
+            </tr>
+          </thead>
+          <tbody>
+            {ls.map((l, i) => {
+              // o mesmo nome escrito de outra maneira ja existe no catalogo
+              const igual = parecidoCom(l.artigo, artigos)
+              const avisa = igual && igual !== l.artigo
+              return (
+                <tr key={i} className="border-t border-slate-100">
+                  <td className="td">
+                    <input className="input px-2 py-1 text-sm" list="lav-artigos"
+                           value={l.artigo} placeholder="nome da peça"
+                           onChange={e => mudar(i, { artigo: e.target.value })} />
+                    {avisa && (
+                      <button className="mt-1 block text-left text-[11px] text-amber-700 hover:underline"
+                              onClick={() => mudar(i, { artigo: igual })}>
+                        Já existe «{igual}» — usar essa?
+                      </button>
+                    )}
+                  </td>
+                  <td className="td">
+                    <NumInput className="px-2 py-1 text-sm" value={l.quantidade}
+                              onChange={n => mudar(i, { quantidade: n })} />
+                  </td>
+                  <td className="td">
+                    <NumInput className="px-2 py-1 text-sm" value={l.valor}
+                              onChange={n => mudar(i, { valor: n })} />
+                  </td>
+                  <td className="td text-center">
+                    <button className="text-slate-300 hover:text-red-600"
+                            title="tirar esta linha"
+                            onClick={() => setLs(x => x.filter((_, k) => k !== i))}>✕</button>
+                  </td>
+                </tr>
+              )
+            })}
+            {!ls.length && (
+              <tr><td colSpan={4} className="td py-6 text-center text-slate-400">
+                Ainda não há peças nesta fatura.
+              </td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <button className="btn-ghost mt-2 text-sm"
+              onClick={() => setLs(x => [...x, { artigo: '', quantidade: 0, valor: 0 }])}>
+        + Acrescentar peça
+      </button>
+    </>
+  )
+}
+
+
+/* ---------------------------------------------------------- o catálogo */
+
+/**
+ * O catálogo de peças: acrescentar, mudar o nome, arrumar por secção.
+ *
+ * Três coisas que convém ver antes de mexer aqui:
+ *
+ *  1. **A secção e o «conta por quarto» reescrevem o histórico.** Não são
+ *     etiquetas: a secção decide em que barra a peça entra nos gráficos de
+ *     todos os anos, e o «conta por quarto» decide se ela entra no €/quarto.
+ *     Mudar uma peça muda números de 2021. Daí o aviso no fim.
+ *  2. **Mudar o nome reescreve as linhas das faturas** — ver `renomearArtigo`.
+ *     Sem isso, as linhas antigas ficavam a apontar para um nome que já não
+ *     existe e passavam a contar como alojamento, caladas.
+ *  3. **Mudar para um nome que já existe é uma junção.** É exactamente o que
+ *     resolve os duplicados que a lista tem — «Fronha Classica» e «Fronha
+ *     Clássica» são a mesma peça escrita duas vezes — mas junta dois
+ *     históricos e não tem volta, por isso pergunta-se.
+ */
+function Catalogo({ artigos, onFechar, onMudou }: {
+  artigos: Artigo[]
+  onFechar: () => void
+  onMudou: () => void
+}) {
+  const toast = useToast()
+  const [nome, setNome] = useState('')
+  const [seccao, setSeccao] = useState<Seccao>('alojamento')
+  const [conta, setConta] = useState(true)
+  const [aTrabalhar, setATrabalhar] = useState(false)
+  const [aRenomear, setARenomear] = useState<string | null>(null)
+  const [nomeNovo, setNomeNovo] = useState('')
+
+  const igual = parecidoCom(nome, artigos)
+
+  const correr = async (f: () => Promise<void>, msg: string) => {
+    setATrabalhar(true)
+    try { await f(); toast(msg); onMudou() }
+    catch (e) { toast((e as Error).message, 'erro') }
+    finally { setATrabalhar(false) }
+  }
+
+  const acrescentar = () => correr(async () => {
+    const n = nome.trim()
+    if (!n) throw new Error('Escreve o nome da peça.')
+    await criarArtigo({ nome: n, seccao, conta_para_quarto: conta })
+    setNome('')
+  }, 'Peça acrescentada')
+
+  const renomear = (a: Artigo) => correr(async () => {
+    const alvo = nomeNovo.trim()
+    if (!alvo) throw new Error('O nome não pode ficar vazio.')
+    const jaExiste = artigos.some(x => x.nome === alvo)
+    if (jaExiste && !confirm(
+      `Já existe uma peça chamada «${alvo}».\n\n`
+      + `Juntar as duas? As linhas de «${a.nome}» passam a contar como «${alvo}» `
+      + `e «${a.nome}» desaparece do catálogo. Não tem volta.`)) return
+    await renomearArtigo(a, alvo, jaExiste)
+    setARenomear(null)
+  }, 'Nome mudado')
+
+  const remover = (a: Artigo) => correr(async () => {
+    const usos = await usosDoArtigo(a.nome)
+    if (usos > 0) {
+      throw new Error(
+        `«${a.nome}» está em ${usos} linha(s) de faturas. `
+        + 'Muda-lhe o nome para a juntar a outra peça, em vez de a apagar.')
+    }
+    if (!confirm(`Apagar «${a.nome}» do catálogo? Não está em nenhuma fatura.`)) return
+    await apagarArtigo(a.nome)
+  }, 'Peça apagada')
+
+  return (
+    <Modal open onClose={onFechar} wide title="Peças de rouparia">
+      {/* acrescentar */}
+      <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+        <div className="grid gap-3 sm:grid-cols-[1fr_auto_auto_auto] sm:items-end">
+          <div>
+            <label className="label">Peça nova</label>
+            <input className="input" value={nome} placeholder="nome como vem na fatura"
+                   onChange={e => setNome(e.target.value)} />
+          </div>
+          <div>
+            <label className="label">Secção</label>
+            <select className="input w-auto" value={seccao}
+                    onChange={e => setSeccao(e.target.value as Seccao)}>
+              {SECCOES.map(s => <option key={s.v} value={s.v}>{s.rot}</option>)}
+            </select>
+          </div>
+          <label className="flex items-center gap-1.5 pb-2 text-sm text-slate-700">
+            <input type="checkbox" checked={conta}
+                   onChange={e => setConta(e.target.checked)} />
+            conta por quarto
+          </label>
+          <button className="btn-primary mb-0.5" disabled={aTrabalhar || !nome.trim()}
+                  onClick={acrescentar}>Acrescentar</button>
+        </div>
+        {igual && igual !== nome.trim() && (
+          <p className="mt-2 text-xs text-amber-700">
+            Já existe <strong>«{igual}»</strong>, que é o mesmo nome escrito de outra
+            maneira. Foi assim que a lista ganhou duplicados.
+          </p>
+        )}
+      </div>
+
+      {/* a lista */}
+      <table className="mt-4 w-full text-sm">
+        <thead>
+          <tr className="border-b border-slate-200 text-left text-[11px] uppercase tracking-wide text-slate-500">
+            <th className="th">Peça</th>
+            <th className="th w-40">Secção</th>
+            <th className="th w-32 text-center">Conta/quarto</th>
+            <th className="th w-28" />
+          </tr>
+        </thead>
+        <tbody>
+          {artigos.map(a => (
+            <tr key={a.nome} className="border-b border-slate-100">
+              <td className="td">
+                {aRenomear === a.nome ? (
+                  <div className="flex gap-2">
+                    <input className="input px-2 py-1 text-sm" autoFocus value={nomeNovo}
+                           list="lav-artigos"
+                           onChange={e => setNomeNovo(e.target.value)} />
+                    <button className="btn-primary px-2 py-1 text-xs" disabled={aTrabalhar}
+                            onClick={() => renomear(a)}>Gravar</button>
+                    <button className="btn-ghost px-2 py-1 text-xs"
+                            onClick={() => setARenomear(null)}>Cancelar</button>
+                  </div>
+                ) : (
+                  <>
+                    <span className="mr-1.5 inline-block h-2 w-2 rounded-sm align-middle"
+                          style={{ backgroundColor: corSeccao(a.seccao) }} />
+                    {a.nome}
+                  </>
+                )}
+              </td>
+              <td className="td">
+                <select className="input px-2 py-1 text-sm" value={a.seccao} disabled={aTrabalhar}
+                        onChange={e => correr(
+                          () => guardarArtigo(a.nome, { seccao: e.target.value as Seccao }),
+                          'Secção mudada')}>
+                  {SECCOES.map(s => <option key={s.v} value={s.v}>{s.rot}</option>)}
+                </select>
+              </td>
+              <td className="td text-center">
+                <input type="checkbox" checked={a.conta_para_quarto} disabled={aTrabalhar}
+                       onChange={e => correr(
+                         () => guardarArtigo(a.nome, { conta_para_quarto: e.target.checked }),
+                         e.target.checked ? 'Passa a contar por quarto' : 'Deixa de contar por quarto')} />
+              </td>
+              <td className="td text-right">
+                {aRenomear !== a.nome && (
+                  <>
+                    <button className="text-xs text-slate-500 hover:text-slate-800"
+                            onClick={() => { setARenomear(a.nome); setNomeNovo(a.nome) }}>
+                      nome
+                    </button>
+                    <button className="ml-2 text-xs text-slate-400 hover:text-red-600"
+                            onClick={() => remover(a)}>apagar</button>
+                  </>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+        A secção e o «conta por quarto» não são etiquetas: decidem em que barra a
+        peça entra nos gráficos e se ela conta para o €/quarto — em todos os anos,
+        não só neste. Mudar uma peça muda números de 2021.
+      </p>
     </Modal>
   )
 }

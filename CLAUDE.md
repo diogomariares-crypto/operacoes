@@ -42,6 +42,8 @@ Os testes vivem em `scripts/` e correm-se com `node`:
 | `testar-sala-no-browser.mjs` | a sala de eventos desenha bem, e fotografa-a | `node …` |
 | `testar-fb-dia.mjs` | o quadro do dia no painel de F&B, com dois dias reais do Gravity | `node …` |
 | `testar-fb-no-browser.mjs` | o mesmo quadro desenhado, e fotografa-o | `node …` |
+| `testar-lavandaria.mjs` | as peças de rouparia: nomes parecidos, linhas de fatura | `node …` |
+| `testar-lavandaria-no-browser.mjs` | a lavandaria desenhada, e fotografa-a | `node …` |
 
 Os dois últimos montam a app com um Supabase falso e abrem-na no Chromium via
 Playwright. Se o browser não for encontrado, passa o caminho em `CHROMIUM=`.
@@ -70,6 +72,11 @@ política de RLS — e confirma-se com `testar-acesso-no-browser.mjs`.
   (`src/lib/housekeeping.ts`): o tempo que falta é positivo, as pessoas que
   sobram são positivas. Alinhá-los parece uma limpeza e parte a leitura da
   coluna «Pessoas ±». Há um teste que falha se o fizeres.
+- **O catálogo da lavandaria liga-se às faturas só pelo texto** — não há chave
+  estrangeira entre `lav_linhas.artigo` e `lav_artigos.nome`. Mudar o nome de
+  uma peça tem de reescrever as linhas (ver `renomearArtigo`), senão o
+  histórico fica órfão e passa a contar como alojamento, calado. Foi assim que
+  nasceram os duplicados que lá estão.
 - **Na sala de eventos, o início e o fim são instantes**, não dia mais hora
   (`src/lib/eventos.ts`). É o que trata um jantar das 20:00 à 01:00 e os dois
   domingos do ano em que o relógio muda. Nunca montes um ISO com `+01` à mão.
