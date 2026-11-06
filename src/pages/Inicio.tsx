@@ -13,8 +13,11 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useApp } from '../lib/appState'
 import { useAuth } from '../lib/auth'
-import { carregarInicio, type Alerta, type Inicio as Dados } from '../lib/inicio'
+import {
+  carregarInicio, type Alerta, type CelulaFb, type Inicio as Dados, type QuadroFb,
+} from '../lib/inicio'
 import { Loading } from '../components/ui'
+import { Tabela, Td, Th } from '../components/turno-parts'
 import { dataExtenso, diaSemanaCurto, dm, dmy, hojeLocal, money } from '../lib/format'
 
 /* As cores dos níveis ficam juntas para o vermelho e o âmbar nunca se
@@ -72,6 +75,71 @@ function Numero({
       </div>
       <div className="mt-0.5 text-[13px] text-slate-500">{nota}</div>
     </Link>
+  )
+}
+
+/**
+ * O quadro de F&B dos sete dias que acabam ontem.
+ *
+ * É de propósito igual ao da passagem de turno — mesmas linhas, mesma ordem,
+ * mesma forma de escrever a célula (pax em cima, dinheiro em baixo). Quem olha
+ * para os dois no mesmo dia tem de reconhecer o mesmo quadro; o que muda é a
+ * janela, e isso diz-se no subtítulo em vez de se dizer com outro desenho.
+ *
+ * Cada dia é um link para o relatório desse dia, na secção do F&B: é onde estes
+ * números se lançam e se corrigem.
+ */
+function QuadroFbSemana({ q }: { q: QuadroFb }) {
+  // Um dia sem nada lançado leva um traço, não um zero: zero pessoas ao jantar
+  // e jantar por lançar parecem iguais escritos a «0» e são coisas diferentes.
+  const cel = (c: CelulaFb, forte = false) =>
+    c.pax || c.eur ? (
+      <>
+        <div>{c.pax} pax</div>
+        <div className={forte ? '' : 'text-slate-500'}>{money(c.eur)}</div>
+      </>
+    ) : (
+      <span className="text-slate-300">—</span>
+    )
+
+  return (
+    <Tabela min={980}>
+      <thead>
+        <tr className="border-b border-slate-100">
+          <Th>Serviço</Th>
+          {q.dias.map(d => (
+            <Th key={d} right>
+              <Link
+                to={`/turno/${d}#fb`}
+                className="block rounded hover:bg-brand-50 hover:text-brand-700"
+              >
+                {diaSemanaCurto(d)}<br />
+                <span className="font-normal tabular-nums">{dm(d)}</span>
+              </Link>
+            </Th>
+          ))}
+          <Th right>7 dias</Th>
+        </tr>
+      </thead>
+      <tbody className="divide-y divide-slate-50">
+        {q.linhas.map(l => (
+          <tr key={l.id}>
+            <Td className="py-2 text-sm text-slate-700">{l.label}</Td>
+            {l.dias.map((c, i) => (
+              <Td key={i} className="py-2 text-right text-xs tabular-nums">{cel(c)}</Td>
+            ))}
+            <Td className="py-2 text-right text-xs font-medium tabular-nums">{cel(l.total)}</Td>
+          </tr>
+        ))}
+        <tr className="bg-slate-50 font-semibold">
+          <Td className="py-2 text-sm">Total dia</Td>
+          {q.totalDia.map((t, i) => (
+            <Td key={i} className="py-2 text-right text-xs tabular-nums">{cel(t, true)}</Td>
+          ))}
+          <Td className="py-2 text-right text-xs tabular-nums">{cel(q.total, true)}</Td>
+        </tr>
+      </tbody>
+    </Tabela>
   )
 }
 
@@ -321,6 +389,21 @@ export default function Inicio() {
           )}
         </section>
       </div>
+
+      {/* --------------------------- f&b -------------------------------- */}
+      {podeFb && d.fbQuadro && (
+        <section className="card p-5">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h2 className="font-semibold text-slate-900">F&amp;B — últimos 7 dias</h2>
+            <p className="text-xs text-slate-500">
+              {dm(d.fbQuadro.dias[0])} a {dm(d.fbQuadro.dias[6])} · até ontem
+            </p>
+          </div>
+          <div className="mt-4">
+            <QuadroFbSemana q={d.fbQuadro} />
+          </div>
+        </section>
+      )}
 
       {/* -------------------------- áreas ------------------------------- */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">

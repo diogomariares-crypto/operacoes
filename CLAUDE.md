@@ -44,6 +44,8 @@ Os testes vivem em `scripts/` e correm-se com `node`:
 | `testar-fb-no-browser.mjs` | o mesmo quadro desenhado, e fotografa-o | `node …` |
 | `testar-lavandaria.mjs` | as peças de rouparia: nomes parecidos, linhas de fatura | `node …` |
 | `testar-lavandaria-no-browser.mjs` | a lavandaria desenhada, e fotografa-a | `node …` |
+| `testar-inicio-fb.mjs` | a janela de 7 dias do quadro de F&B do Início, e as somas | `TZ=Europe/Lisbon node …` |
+| `testar-inicio-fb-no-browser.mjs` | o mesmo quadro desenhado — prova que a última coluna é ontem | `TZ=Europe/Lisbon node …` |
 
 Os dois últimos montam a app com um Supabase falso e abrem-na no Chromium via
 Playwright. Se o browser não for encontrado, passa o caminho em `CHROMIUM=`.
@@ -77,6 +79,13 @@ política de RLS — e confirma-se com `testar-acesso-no-browser.mjs`.
   uma peça tem de reescrever as linhas (ver `renomearArtigo`), senão o
   histórico fica órfão e passa a contar como alojamento, calado. Foi assim que
   nasceram os duplicados que lá estão.
+- **O quadro de F&B do Início acaba ontem, o da passagem de turno não.** São o
+  mesmo desenho de propósito (`QuadroFbSemana` em `src/pages/Inicio.tsx` e
+  `ResumoSemana` em `src/pages/Turno.tsx`), mas respondem a perguntas
+  diferentes: lá é a semana de calendário e inclui o que aí vem; aqui são sete
+  dias móveis que acabam em ontem, porque hoje a meio da manhã só tem os
+  pequenos-almoços lançados e lê-se como uma quebra. Há um teste que falha se
+  hoje entrar na grelha.
 - **Na sala de eventos, o início e o fim são instantes**, não dia mais hora
   (`src/lib/eventos.ts`). É o que trata um jantar das 20:00 à 01:00 e os dois
   domingos do ano em que o relógio muda. Nunca montes um ISO com `+01` à mão.

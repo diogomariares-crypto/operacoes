@@ -11,6 +11,7 @@
  */
 import { supabase } from './supabase'
 import { addDays, diffDias, hojeLocal } from './format'
+import { SERVICOS_FB } from './turno'
 
 /** Um dia da previsão de ocupação. */
 export interface DiaOcupacao {
@@ -50,12 +51,89 @@ export interface Alerta {
   to: string
 }
 
+/* ----------------------------- quadro de F&B ------------------------------ */
+
+/** O que um serviço fez num dia: pessoas servidas e dinheiro. */
+export interface CelulaFb { pax: number; eur: number }
+
+/** Uma linha do quadro: um serviço ao longo dos sete dias, e o seu total. */
+export interface LinhaFb {
+  id: string
+  label: string
+  dias: CelulaFb[]
+  total: CelulaFb
+}
+
+/**
+ * O quadro de F&B dos sete dias móveis.
+ *
+ * É o mesmo quadro da passagem de turno, com duas diferenças que mudam o que
+ * ele responde. Lá a janela é a semana de calendário e inclui o futuro, porque
+ * quem está ao balcão precisa de saber o que aí vem. Aqui a janela acaba
+ * **ontem** e anda com os dias: o Início responde «como é que correram os
+ * últimos sete dias», e o dia de hoje — que a meio da manhã só tem os
+ * pequenos-almoços lançados — baixaria a média e faria parecer uma quebra onde
+ * só há um dia por acabar.
+ */
+export interface QuadroFb {
+  /** Os sete dias, do mais antigo ao mais recente; o último é ontem. */
+  dias: string[]
+  linhas: LinhaFb[]
+  /** Total de cada dia, na mesma ordem de `dias`. */
+  totalDia: CelulaFb[]
+  total: CelulaFb
+}
+
+/** As linhas de `fb_numbers` de que o quadro precisa. */
+export interface LinhaFbNumbers {
+  report_date: string
+  coluna: string
+  total_pax: number | null
+  total_eur: number | string | null
+}
+
+/** Os sete dias que acabam em `ultimo`, do mais antigo para o mais recente. */
+export const seteDiasAte = (ultimo: string) =>
+  Array.from({ length: 7 }, (_, i) => addDays(ultimo, i - 6))
+
+const somaFb = (cs: CelulaFb[]) =>
+  cs.reduce((a, c) => ({ pax: a.pax + c.pax, eur: a.eur + c.eur }), { pax: 0, eur: 0 })
+
+/**
+ * Monta o quadro a partir das linhas cruas.
+ *
+ * Separado da consulta de propósito: é a única parte com contas, e assim
+ * testa-se sem base de dados (`scripts/testar-inicio-fb.mjs`).
+ *
+ * O mesmo serviço pode ter mais do que uma linha no mesmo dia — somam-se. E um
+ * dia sem lançamento nenhum fica a zero em vez de desaparecer: a grelha tem
+ * sempre sete colunas, senão os dias deslizam para debaixo do cabeçalho errado.
+ */
+export function montarQuadroFb(dias: string[], linhas: LinhaFbNumbers[]): QuadroFb {
+  const celulas = new Map<string, CelulaFb>()
+  for (const l of linhas) {
+    const k = `${l.coluna}|${l.report_date}`
+    const c = celulas.get(k) ?? { pax: 0, eur: 0 }
+    c.pax += Number(l.total_pax ?? 0)
+    c.eur += Number(l.total_eur ?? 0)
+    celulas.set(k, c)
+  }
+  const ls = SERVICOS_FB.map(s => {
+    const ds = dias.map(d => celulas.get(`${s.id}|${d}`) ?? { pax: 0, eur: 0 })
+    return { id: s.id, label: s.label, dias: ds, total: somaFb(ds) }
+  })
+  const totalDia = dias.map((_, i) => somaFb(ls.map(l => l.dias[i])))
+  return { dias, linhas: ls, totalDia, total: somaFb(totalDia) }
+}
+
 export interface Inicio {
   hoje: DiaOcupacao | null
   previsao: DiaOcupacao[]
   tarifaMedia7: number | null
   /** Null quando o perfil não tem acesso à faturação — não é o mesmo que zero. */
   fb7dias: number | null
+  /** Null quando o perfil não tem acesso ao F&B. */
+  fbQuadro: QuadroFb | null
   vips: number
   transfers: number
   perdidos: number
@@ -93,10 +171,12 @@ export async function carregarInicio(hotelId: string, pode: Permissoes): Promise
   const hoje = hojeLocal()
   const ha7 = addDays(hoje, -7)
   const daqui30 = addDays(hoje, 30)
+  // O quadro de F&B acaba ontem — ver a nota em `QuadroFb`.
+  const diasFb = seteDiasAte(addDays(hoje, -1))
 
   const [
     ocup, manut, pend, perd, recl, vipsR, transfR,
-    gruposR, primeiroR, fbR, contagemR, abertasR, hkR, empregadosR,
+    gruposR, primeiroR, fbR, fbQuadroR, contagemR, abertasR, hkR, empregadosR,
   ] = await Promise.all([
     // A ocupação é lançada por dia de relatório com uma previsão em `day_offset`,
     // por isso interessa só o relatório mais recente — daí trazer uma janela e
@@ -129,6 +209,11 @@ export async function carregarInicio(hotelId: string, pode: Permissoes): Promise
     pode.fb
       ? supabase.from('fb_billing').select('day_total')
           .eq('hotel_id', hotelId).gte('service_date', ha7).lte('service_date', hoje)
+      : Promise.resolve({ data: null, count: null }),
+    pode.fb
+      ? supabase.from('fb_numbers').select('report_date, coluna, total_pax, total_eur')
+          .eq('hotel_id', hotelId)
+          .gte('report_date', diasFb[0]).lte('report_date', diasFb[6])
       : Promise.resolve({ data: null, count: null }),
     supabase.from('periods').select('end_date, submitted_at')
       .eq('hotel_id', hotelId).eq('status', 'submetido')
@@ -249,12 +334,18 @@ export async function carregarInicio(hotelId: string, pode: Permissoes): Promise
   const fb7dias = pode.fb && fb.length
     ? fb.reduce((a, r) => a + (num(r.day_total) ?? 0), 0)
     : null
+  // O quadro mostra-se mesmo sem lançamentos — sete colunas de traços dizem
+  // «não foi lançado», que é informação; escondê-lo não dizia nada.
+  const fbQuadro = pode.fb
+    ? montarQuadroFb(diasFb, (fbQuadroR.data ?? []) as LinhaFbNumbers[])
+    : null
 
   return {
     hoje: previsao[0] ?? null,
     previsao,
     tarifaMedia7,
     fb7dias,
+    fbQuadro,
     vips: vipsR.count ?? 0,
     transfers: transfR.count ?? 0,
     perdidos: perd.count ?? 0,
