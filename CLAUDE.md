@@ -118,6 +118,51 @@ Por experiência, com este tool:
 Quando precisares de apagar, escreve o SQL num ficheiro em `sql/` e pede ao
 Diogo para o correr no editor do Supabase.
 
+## Partir o `Turno.tsx` (combinado, por fazer)
+
+O `Turno.tsx` tem 1713 linhas e o `Caixa.tsx` 1415. Qualquer mexida na passagem
+de turno obriga a percorrer o ficheiro inteiro, e isso tornou as alterações cada
+vez mais lentas. O combinado com o Diogo é parti-lo **sem mudar comportamento
+nenhum** — é uma mudança de arrumação, não de funcionalidade.
+
+O corte já está feito pelo próprio ficheiro: há doze secções independentes, cada
+uma um componente com a sua `ancora`.
+
+| Secção | Âncora | Separador |
+|---|---|---|
+| `Ocupacao` | `ocupacao` | resumo |
+| `Feedback` | `feedback` | resumo |
+| `Vips` | `vips` | hospedes |
+| `Transfers` | `transfers` | hospedes |
+| `Breakfast` | `breakfast` | hospedes |
+| `Pendentes` | `pendentes` | pendentes |
+| `Relevantes` | `relevantes` | pendentes |
+| `Manutencao` | `manutencao` | pendentes |
+| `Reclamacoes` | `reclamacoes` | pendentes |
+| `FeB` + `ResumoSemana` | `fb` | fb |
+| `NotasFb` | `fb-notas` | fb |
+| `Chegadas` | `chegadas` | chegadas |
+
+Para `src/pages/turno/`, um ficheiro por secção. O `Turno.tsx` fica com a casca:
+carregamento, separadores, `ABAS`, `SECCAO_ABA` e o estado partilhado. O `Ctx`,
+o `usarAcao` e o `btnAdd` passam para `src/pages/turno/comum.tsx`, que é o que
+todas importam.
+
+**A armadilha, e é silenciosa:** o `scripts/verificar-ancoras.mjs` lê as âncoras
+de `src/pages/Turno.tsx` e só de lá. Assim que as secções mudarem de ficheiro,
+ele deixa de as encontrar e acusa «SECCAO_ABA tem #x, que não corresponde a
+nenhuma secção» para as doze. Tem de passar a varrer `src/pages/turno/*.tsx`
+também — **e isso faz parte do trabalho, não é um teste a enfraquecer.** Com a
+leitura corrigida, o script continua a provar o que provava: que cada link do
+Início cai numa secção que existe, no separador certo.
+
+Como se prova que nada mudou: `npx tsc -b --force`, `npm run build`, os oito
+testes de `scripts/`, o `verificar-ancoras.mjs`, e abrir os cinco separadores no
+browser (o `testar-fb-no-browser.mjs` já tem o andaime para isso).
+
+Fazer isto numa conversa dedicada e de uma vez — a meio de outra coisa é como
+isto corre mal.
+
 ## A fazer, em dívida
 
 - `sql/acesso-checklist.sql` — por correr. Até lá, a app esconde mas a API
